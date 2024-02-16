@@ -12,6 +12,9 @@ pub enum Token<'a> {
     KeywordLet,
     OperatorAssignment,
     OperatorAddition,
+    OperatorDivision,
+    OperatorMultiplication,
+    OperatorSubtraction,
     OperatorStatementEnd,
 }
 
@@ -117,6 +120,15 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
             '+' => {
                 tokens.push(Token::OperatorAddition);
             }
+            '/' => {
+                tokens.push(Token::OperatorDivision);
+            }
+            '*' => {
+                tokens.push(Token::OperatorMultiplication);
+            }
+            '-' => {
+                tokens.push(Token::OperatorSubtraction);
+            }
             ';' => {
                 tokens.push(Token::OperatorStatementEnd);
             }
@@ -134,15 +146,14 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                         }
                     }
 
-                    if i == value_index_end {
-                        let value = &code[i..=value_index_end];
-                        let value = value.parse::<i64>().map_err(|e| e.to_string())?;
-                        tokens.push(Token::LiteralInteger(value));
+                    let value = if i == value_index_end {
+                        &code[i..=value_index_end]
                     } else {
-                        let value = &code[i..value_index_end];
-                        let value = value.parse::<i64>().map_err(|e| e.to_string())?;
-                        tokens.push(Token::LiteralInteger(value));
-                    }
+                        &code[i..value_index_end]
+                    };
+
+                    let value = value.parse::<i64>().map_err(|e| e.to_string())?;
+                    tokens.push(Token::LiteralInteger(value));
                 } else if c.is_alphabetic() {
                     let mut identifier_index_end = i;
 
@@ -205,6 +216,34 @@ mod tests {
                 Token::LiteralInteger(10),
                 Token::LiteralInteger(200),
                 Token::LiteralInteger(1000)
+            ]
+        );
+    }
+    #[test]
+    fn tokenize_operator_arithmetic() {
+        // All together
+        let code = "+-*/";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::OperatorAddition,
+                Token::OperatorSubtraction,
+                Token::OperatorMultiplication,
+                Token::OperatorDivision
+            ]
+        );
+
+        // Seperated by spaces
+        let code = "+ - * /";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::OperatorAddition,
+                Token::OperatorSubtraction,
+                Token::OperatorMultiplication,
+                Token::OperatorDivision
             ]
         );
     }
