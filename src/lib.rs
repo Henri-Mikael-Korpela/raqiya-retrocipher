@@ -14,7 +14,7 @@ pub enum Token<'a> {
     OperatorStatementEnd,
 }
 
-/// Parses a string into a sequence of tokens for Bloom programming language.
+/// Parses code in form of a string into a sequence of tokens.
 pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
     // Add an extra space character to the end of the input string iterator
     // to simplify the tokenization logic. The logic below relies on peeking

@@ -1,11 +1,7 @@
 [package]
-name = "raqiya-bloom"
+name = "raqiya-retrocipher"
+description = "Compiler for the Retrocipher programming language"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-files = "0.6.2"
-actix-web = "4"
-
-[workspace]
-members = ["bloomc"]
