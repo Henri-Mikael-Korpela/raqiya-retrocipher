@@ -16,7 +16,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|err| format!("Failed to read the given file: {}", err))?;
 
     let tokens = rcc::tokenize(&file_content)?;
-    println!("{:?}", tokens);
+
+    let ast_nodes = rcc::parse(&tokens)?;
+    println!("{:?}", ast_nodes);
 
     Ok(())
 }

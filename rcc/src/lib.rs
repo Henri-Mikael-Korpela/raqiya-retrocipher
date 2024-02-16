@@ -1,4 +1,16 @@
 #[derive(Debug, PartialEq)]
+pub enum AstNode<'a> {
+    FunctionDefinition {
+        name: &'a str,
+        parameters: Vec<AstNodeFunctionParameter<'a>>,
+    },
+}
+#[derive(Debug, PartialEq)]
+pub struct AstNodeFunctionParameter<'a> {
+    name: &'a str,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Token<'a> {
     DelimiterBraceClose,
     DelimiterBraceOpen,
@@ -18,6 +30,28 @@ pub enum Token<'a> {
     OperatorStatementEnd,
 }
 
+pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
+    let mut tokens = tokens.iter().peekable();
+
+    let mut ast_nodes = vec![];
+
+    while let Some(token) = tokens.next() {
+        match token {
+            Token::KeywordFn => {
+                if let Some(Token::Identifier(name)) = tokens.peek() {
+                    tokens.next();
+                    ast_nodes.push(AstNode::FunctionDefinition {
+                        name,
+                        parameters: vec![],
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(ast_nodes)
+}
 /// Parses code in form of a string into a sequence of tokens.
 pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
     // Add an extra space character to the end of the input string iterator
@@ -179,6 +213,19 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_function_definition() {
+        let tokens = vec![Token::KeywordFn, Token::Identifier("main")];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::FunctionDefinition {
+                name: "main",
+                parameters: vec![]
+            }]
+        );
+    }
 
     #[test]
     fn tokenize_function_without_parameters_and_with_empty_body() {
