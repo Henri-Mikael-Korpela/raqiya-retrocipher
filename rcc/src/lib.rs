@@ -14,6 +14,8 @@ pub struct AstNodeFunctionParameter<'a> {
 pub enum Token<'a> {
     DelimiterBraceClose,
     DelimiterBraceOpen,
+    DelimiterColon,
+    DelimiterComma,
     DelimiterParenthesisClose,
     DelimiterParenthesisOpen,
     Identifier(&'a str),
@@ -40,10 +42,70 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
             Token::KeywordFn => {
                 if let Some(Token::Identifier(name)) = tokens.peek() {
                     tokens.next();
-                    ast_nodes.push(AstNode::FunctionDefinition {
-                        name,
-                        parameters: vec![],
-                    });
+
+                    if let Some(Token::DelimiterParenthesisOpen) = tokens.peek() {
+                        tokens.next();
+
+                        let mut parameters = vec![];
+
+                        let mut expect_parameter_type = false;
+                        let mut parameter_name_token = None;
+
+                        'parameter_parsing: while let Some(next_token) = tokens.peek() {
+                            match next_token {
+                                Token::DelimiterColon => {
+                                    if parameter_name_token.is_some() {
+                                        expect_parameter_type = true;
+                                        tokens.next();
+                                    } else {
+                                        return Err(format!(
+                                            "Expected parameter name before comma. Instead, found: {:?}",
+                                            next_token
+                                        ));
+                                    }
+                                }
+                                Token::DelimiterParenthesisClose => {
+                                    tokens.next();
+                                    break 'parameter_parsing;
+                                }
+                                Token::Identifier(parameter_name) => {
+                                    match parameter_name_token {
+                                        Some(parameter_name) => {
+                                            if expect_parameter_type {
+                                                expect_parameter_type = false;
+                                                parameters.push(AstNodeFunctionParameter {
+                                                    name: parameter_name,
+                                                });
+                                            } else {
+                                                return Err(format!(
+                                                    "Expected comma after parameter name. Instead, found: {:?}",
+                                                    next_token
+                                                )
+                                                .into());
+                                            }
+                                        }
+                                        None => {
+                                            parameter_name_token = Some(parameter_name);
+                                        }
+                                    }
+
+                                    tokens.next();
+                                }
+                                _ => {
+                                    return Err(format!(
+                                        "Expected parameter name or closing parenthesis after opening parenthesis. Instead, found: {:?}",
+                                        next_token
+                                    ));
+                                }
+                            }
+                        }
+
+                        ast_nodes.push(AstNode::FunctionDefinition { name, parameters });
+                    } else {
+                        return Err("Expected opening parenthesis after function name. Instead, no opening parenthesis found.".into());
+                    }
+                } else {
+                    return Err("Expected function name after 'fn' keyword. Instead, no identifier for function name found.".into());
                 }
             }
             _ => {}
@@ -142,6 +204,12 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
             '{' => {
                 tokens.push(Token::DelimiterBraceOpen);
             }
+            ':' => {
+                tokens.push(Token::DelimiterColon);
+            }
+            ',' => {
+                tokens.push(Token::DelimiterComma);
+            }
             ')' => {
                 tokens.push(Token::DelimiterParenthesisClose);
             }
@@ -215,14 +283,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_function_definition() {
-        let tokens = vec![Token::KeywordFn, Token::Identifier("main")];
+    fn parse_function_definition_without_parameters_and_empty_body() {
+        let tokens = vec![
+            Token::KeywordFn,
+            Token::Identifier("main"),
+            Token::DelimiterParenthesisOpen,
+            Token::DelimiterParenthesisClose,
+            Token::DelimiterBraceOpen,
+            Token::DelimiterBraceClose,
+        ];
         let ast_nodes = parse(&tokens).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
                 name: "main",
                 parameters: vec![]
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_function_definition_with_parameters_and_empty_body() {
+        let tokens = vec![
+            Token::KeywordFn,
+            Token::Identifier("main"),
+            Token::DelimiterParenthesisOpen,
+            Token::Identifier("x"),
+            Token::DelimiterColon,
+            Token::Identifier("I32"),
+            Token::DelimiterParenthesisClose,
+            Token::DelimiterBraceOpen,
+            Token::DelimiterBraceClose,
+        ];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::FunctionDefinition {
+                name: "main",
+                parameters: vec![AstNodeFunctionParameter { name: "x" }]
             }]
         );
     }
