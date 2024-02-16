@@ -1,7 +1,10 @@
 [package]
 name = "raqiya-retrocipher"
-description = "Compiler for the Retrocipher programming language"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rcc = { path = "./rcc" }
+
+[workspace]
+members = ["rcc"]

@@ -5,3 +5,10 @@ version = 3
 [[package]]
 name = "raqiya-retrocipher"
 version = "0.1.0"
+dependencies = [
+ "rcc",
+]
+
+[[package]]
+name = "rcc"
+version = "0.1.0"

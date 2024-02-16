@@ -11,6 +11,7 @@ pub enum Token<'a> {
     KeywordFn,
     KeywordLet,
     OperatorAssignment,
+    OperatorAddition,
     OperatorStatementEnd,
 }
 
@@ -112,6 +113,9 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
             }
             '=' => {
                 tokens.push(Token::OperatorAssignment);
+            }
+            '+' => {
+                tokens.push(Token::OperatorAddition);
             }
             ';' => {
                 tokens.push(Token::OperatorStatementEnd);
