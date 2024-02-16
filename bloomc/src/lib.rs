@@ -5,6 +5,8 @@ pub enum Token<'a> {
     DelimiterParenthesisClose,
     DelimiterParenthesisOpen,
     Identifier(&'a str),
+    LiteralBooleanFalse,
+    LiteralBooleanTrue,
     LiteralInteger(i64),
     KeywordFn,
     KeywordLet,
@@ -30,9 +32,35 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
         match c {
             'f' => {
                 if let Some((_, next_c)) = chars.peek() {
-                    if *next_c == 'n' {
-                        chars.next();
-                        tokens.push(Token::KeywordFn);
+                    match *next_c {
+                        'a' => {
+                            chars.next();
+                            if let Some((_, next_c)) = chars.peek() {
+                                if *next_c == 'l' {
+                                    chars.next();
+                                    if let Some((_, next_c)) = chars.peek() {
+                                        if *next_c == 's' {
+                                            chars.next();
+                                            if let Some((_, next_c)) = chars.peek() {
+                                                if *next_c == 'e' {
+                                                    chars.next();
+                                                    tokens.push(Token::LiteralBooleanFalse);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        'n' => {
+                            chars.next();
+                            if let Some((_, next_c)) = chars.peek() {
+                                if *next_c == ' ' {
+                                    tokens.push(Token::KeywordFn);
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -46,6 +74,27 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                                 tokens.push(Token::KeywordLet);
                             }
                         }
+                    }
+                }
+            }
+            't' => {
+                if let Some((_, next_c)) = chars.peek() {
+                    match *next_c {
+                        'r' => {
+                            chars.next();
+                            if let Some((_, next_c)) = chars.peek() {
+                                if *next_c == 'u' {
+                                    chars.next();
+                                    if let Some((_, next_c)) = chars.peek() {
+                                        if *next_c == 'e' {
+                                            chars.next();
+                                            tokens.push(Token::LiteralBooleanTrue);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -130,6 +179,15 @@ mod tests {
                 Token::DelimiterBraceOpen,
                 Token::DelimiterBraceClose
             ]
+        );
+    }
+    #[test]
+    fn tokenize_literals_boolean() {
+        let code = "true false";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![Token::LiteralBooleanTrue, Token::LiteralBooleanFalse]
         );
     }
     #[test]
