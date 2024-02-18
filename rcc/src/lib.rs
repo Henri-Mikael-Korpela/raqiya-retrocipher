@@ -132,76 +132,8 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
 
     let mut tokens = vec![];
 
-    while let Some((i, c)) = chars.next() {
+    'main_token_loop: while let Some((i, c)) = chars.next() {
         match c {
-            'f' => {
-                if let Some((_, next_c)) = chars.peek() {
-                    match *next_c {
-                        'a' => {
-                            chars.next();
-                            if let Some((_, next_c)) = chars.peek() {
-                                if *next_c == 'l' {
-                                    chars.next();
-                                    if let Some((_, next_c)) = chars.peek() {
-                                        if *next_c == 's' {
-                                            chars.next();
-                                            if let Some((_, next_c)) = chars.peek() {
-                                                if *next_c == 'e' {
-                                                    chars.next();
-                                                    tokens.push(Token::LiteralBooleanFalse);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        'n' => {
-                            chars.next();
-                            if let Some((_, next_c)) = chars.peek() {
-                                if *next_c == ' ' {
-                                    tokens.push(Token::KeywordFn);
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            'l' => {
-                if let Some((_, next_c)) = chars.peek() {
-                    if *next_c == 'e' {
-                        chars.next();
-                        if let Some((_, next_c)) = chars.peek() {
-                            if *next_c == 't' {
-                                chars.next();
-                                tokens.push(Token::KeywordLet);
-                            }
-                        }
-                    }
-                }
-            }
-            't' => {
-                if let Some((_, next_c)) = chars.peek() {
-                    match *next_c {
-                        'r' => {
-                            chars.next();
-                            if let Some((_, next_c)) = chars.peek() {
-                                if *next_c == 'u' {
-                                    chars.next();
-                                    if let Some((_, next_c)) = chars.peek() {
-                                        if *next_c == 'e' {
-                                            chars.next();
-                                            tokens.push(Token::LiteralBooleanTrue);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
             '}' => {
                 tokens.push(Token::DelimiterBraceClose);
             }
@@ -261,6 +193,7 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                     let value = value.parse::<i64>().map_err(|e| e.to_string())?;
                     tokens.push(Token::LiteralInteger(value));
                 } else if c.is_alphabetic() {
+                    // In this state, we expect an identifier or a keyword.
                     let mut identifier_index_end = i;
 
                     while let Some((_, next_c)) = chars.peek() {
@@ -272,8 +205,16 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                         }
                     }
 
-                    let identifier = &code[i..identifier_index_end];
-                    tokens.push(Token::Identifier(identifier));
+                    match &code[i..identifier_index_end] {
+                        "fn" => tokens.push(Token::KeywordFn),
+                        "let" => tokens.push(Token::KeywordLet),
+                        "true" => tokens.push(Token::LiteralBooleanTrue),
+                        "false" => tokens.push(Token::LiteralBooleanFalse),
+                        _ => {
+                            let identifier = &code[i..identifier_index_end];
+                            tokens.push(Token::Identifier(identifier));
+                        }
+                    }
                 }
             }
         }
