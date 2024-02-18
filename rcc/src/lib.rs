@@ -64,6 +64,9 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                                         ));
                                     }
                                 }
+                                Token::DelimiterComma => {
+                                    tokens.next();
+                                }
                                 Token::DelimiterParenthesisClose => {
                                     tokens.next();
                                     break 'parameter_parsing;
@@ -76,6 +79,7 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                                                 parameters.push(AstNodeFunctionParameter {
                                                     name: parameter_name,
                                                 });
+                                                parameter_name_token = None;
                                             } else {
                                                 return Err(format!(
                                                     "Expected comma after parameter name. Instead, found: {:?}",
@@ -301,9 +305,8 @@ mod tests {
             }]
         );
     }
-
     #[test]
-    fn parse_function_definition_with_parameters_and_empty_body() {
+    fn parse_function_definition_with_one_parameter_and_empty_body() {
         let tokens = vec![
             Token::KeywordFn,
             Token::Identifier("main"),
@@ -321,6 +324,35 @@ mod tests {
             vec![AstNode::FunctionDefinition {
                 name: "main",
                 parameters: vec![AstNodeFunctionParameter { name: "x" }]
+            }]
+        );
+    }
+    #[test]
+    fn parse_function_definition_with_many_parameters_and_empty_body() {
+        let tokens = vec![
+            Token::KeywordFn,
+            Token::Identifier("main"),
+            Token::DelimiterParenthesisOpen,
+            Token::Identifier("x"),
+            Token::DelimiterColon,
+            Token::Identifier("I32"),
+            Token::DelimiterComma,
+            Token::Identifier("y"),
+            Token::DelimiterColon,
+            Token::Identifier("I32"),
+            Token::DelimiterParenthesisClose,
+            Token::DelimiterBraceOpen,
+            Token::DelimiterBraceClose,
+        ];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::FunctionDefinition {
+                name: "main",
+                parameters: vec![
+                    AstNodeFunctionParameter { name: "x" },
+                    AstNodeFunctionParameter { name: "y" }
+                ]
             }]
         );
     }
