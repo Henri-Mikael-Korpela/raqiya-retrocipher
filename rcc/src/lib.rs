@@ -1,10 +1,12 @@
 #[derive(Debug, PartialEq)]
 pub enum AstNode<'a> {
+    Addition(Box<AstNode<'a>>, Box<AstNode<'a>>),
     FunctionDefinition {
         name: &'a str,
         parameters: Vec<AstNodeFunctionParameter<'a>>,
         body: Vec<AstNode<'a>>,
     },
+    Identifier(&'a str),
     LiteralInteger(i64),
     ReturnStatement(Box<AstNode<'a>>),
 }
@@ -147,6 +149,31 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                                             body,
                                         });
                                         continue 'main_parse_loop;
+                                    }
+                                    Token::Identifier(name) => {
+                                        // Expect an addition to follow this identifier token.
+                                        if let Some(Token::OperatorAddition) = tokens.peek() {
+                                            tokens.next();
+
+                                            if let Some(Token::Identifier(name2)) = tokens.peek() {
+                                                tokens.next();
+
+                                                prev_value_token = Some(AstNode::Addition(
+                                                    Box::new(AstNode::Identifier(name)),
+                                                    Box::new(AstNode::Identifier(name2)),
+                                                ));
+                                            } else {
+                                                return Err(format!(
+                                                    "Expected identifier after addition (+). Instead, found: {:?}",
+                                                    tokens.peek()
+                                                ));
+                                            }
+                                        } else {
+                                            return Err(format!(
+                                                "Expected addition (+) after identifier. Instead, found: {:?}",
+                                                tokens.peek()
+                                            ));
+                                        }
                                     }
                                     Token::LiteralInteger(value) => {
                                         prev_value_token = Some(AstNode::LiteralInteger(*value));
@@ -315,7 +342,7 @@ mod tests {
         );
     }
     #[test]
-    fn parse_function_definition_without_parameters_and_one_expression_as_return_value() {
+    fn parse_function_definition_without_parameters_and_one_literal_as_return_value() {
         let tokens = vec![
             Token::KeywordFn,
             Token::Identifier("main"),
@@ -335,6 +362,44 @@ mod tests {
                 parameters: vec![],
                 body: vec![AstNode::ReturnStatement(Box::new(AstNode::LiteralInteger(
                     5
+                )))]
+            }]
+        );
+    }
+    #[test]
+    fn parse_function_definition_with_parameters_and_one_expression_as_return_value() {
+        let tokens = vec![
+            Token::KeywordFn,
+            Token::Identifier("main"),
+            Token::DelimiterParenthesisOpen,
+            Token::Identifier("x"),
+            Token::DelimiterColon,
+            Token::Identifier("I32"),
+            Token::DelimiterComma,
+            Token::Identifier("y"),
+            Token::DelimiterColon,
+            Token::Identifier("I32"),
+            Token::DelimiterParenthesisClose,
+            Token::OperatorArrow,
+            Token::Identifier("I32"),
+            Token::DelimiterBraceOpen { level: 0 },
+            Token::Identifier("x"),
+            Token::OperatorAddition,
+            Token::Identifier("y"),
+            Token::DelimiterBraceClose { level: 0 },
+        ];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::FunctionDefinition {
+                name: "main",
+                parameters: vec![
+                    AstNodeFunctionParameter { name: "x" },
+                    AstNodeFunctionParameter { name: "y" }
+                ],
+                body: vec![AstNode::ReturnStatement(Box::new(AstNode::Addition(
+                    Box::new(AstNode::Identifier("x")),
+                    Box::new(AstNode::Identifier("y"))
                 )))]
             }]
         );
