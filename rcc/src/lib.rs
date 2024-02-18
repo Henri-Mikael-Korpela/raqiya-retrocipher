@@ -13,6 +13,11 @@ pub struct AstNodeFunctionParameter<'a> {
     name: &'a str,
 }
 
+const KEYWORD_FN: &str = "fn";
+const KEYWORD_LET: &str = "let";
+const KEYWORD_FALSE: &str = "false";
+const KEYWORD_TRUE: &str = "true";
+
 #[derive(Debug, PartialEq)]
 pub enum Token<'a> {
     DelimiterBraceClose { level: usize },
@@ -158,7 +163,9 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                         return Err("Expected opening parenthesis after function name. Instead, no opening parenthesis found.".into());
                     }
                 } else {
-                    return Err("Expected function name after 'fn' keyword. Instead, no identifier for function name found.".into());
+                    return Err(format!(
+                        "Expected function name after '{KEYWORD_FN}' keyword. Instead, no identifier for function name found."
+                    ));
                 }
             }
             _ => {}
@@ -167,6 +174,7 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
 
     Ok(ast_nodes)
 }
+
 /// Parses code in form of a string into a sequence of tokens.
 pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
     // Add an extra space character to the end of the input string iterator
@@ -265,10 +273,10 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                     }
 
                     match &code[i..identifier_or_keyword_index_end] {
-                        "fn" => tokens.push(Token::KeywordFn),
-                        "let" => tokens.push(Token::KeywordLet),
-                        "true" => tokens.push(Token::LiteralBooleanTrue),
-                        "false" => tokens.push(Token::LiteralBooleanFalse),
+                        KEYWORD_FN => tokens.push(Token::KeywordFn),
+                        KEYWORD_LET => tokens.push(Token::KeywordLet),
+                        KEYWORD_TRUE => tokens.push(Token::LiteralBooleanTrue),
+                        KEYWORD_FALSE => tokens.push(Token::LiteralBooleanFalse),
                         _ => {
                             let identifier = &code[i..identifier_or_keyword_index_end];
                             tokens.push(Token::Identifier(identifier));
@@ -385,6 +393,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tokenize_expression_arithmetic_addition() {
+        let code = "5 + 10";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::LiteralInteger(5),
+                Token::OperatorAddition,
+                Token::LiteralInteger(10)
+            ]
+        );
+    }
     #[test]
     fn tokenize_function_without_parameters_and_with_empty_body() {
         let code = "fn main(){}";
