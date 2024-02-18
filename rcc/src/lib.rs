@@ -132,7 +132,7 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
 
     let mut tokens = vec![];
 
-    'main_token_loop: while let Some((i, c)) = chars.next() {
+    while let Some((i, c)) = chars.next() {
         match c {
             '}' => {
                 tokens.push(Token::DelimiterBraceClose);
