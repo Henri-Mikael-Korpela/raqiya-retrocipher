@@ -3,7 +3,10 @@ pub enum AstNode<'a> {
     FunctionDefinition {
         name: &'a str,
         parameters: Vec<AstNodeFunctionParameter<'a>>,
+        body: Vec<AstNode<'a>>,
     },
+    LiteralInteger(i64),
+    ReturnStatement(Box<AstNode<'a>>),
 }
 #[derive(Debug, PartialEq)]
 pub struct AstNodeFunctionParameter<'a> {
@@ -12,8 +15,8 @@ pub struct AstNodeFunctionParameter<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum Token<'a> {
-    DelimiterBraceClose,
-    DelimiterBraceOpen,
+    DelimiterBraceClose { level: usize },
+    DelimiterBraceOpen { level: usize },
     DelimiterColon,
     DelimiterComma,
     DelimiterParenthesisClose,
@@ -24,6 +27,7 @@ pub enum Token<'a> {
     LiteralInteger(i64),
     KeywordFn,
     KeywordLet,
+    OperatorArrow,
     OperatorAssignment,
     OperatorAddition,
     OperatorDivision,
@@ -37,7 +41,7 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
 
     let mut ast_nodes = vec![];
 
-    while let Some(token) = tokens.next() {
+    'main_parse_loop: while let Some(token) = tokens.next() {
         match token {
             Token::KeywordFn => {
                 if let Some(Token::Identifier(name)) = tokens.peek() {
@@ -47,6 +51,7 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                         tokens.next();
 
                         let mut parameters = vec![];
+                        let mut body = vec![];
 
                         let mut expect_parameter_type = false;
                         let mut parameter_name_token = None;
@@ -104,7 +109,51 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                             }
                         }
 
-                        ast_nodes.push(AstNode::FunctionDefinition { name, parameters });
+                        // If there is a return type for the function after the parameters
+                        if let Some(Token::OperatorArrow) = tokens.peek() {
+                            tokens.next();
+                            tokens.next(); // For now, ignore the return type of the function.
+                        }
+
+                        // Expect a function body after the parameters and possible return type
+                        if let Some(Token::DelimiterBraceOpen { level }) = tokens.peek() {
+                            tokens.next();
+
+                            let function_body_opening_level = *level;
+                            let mut prev_value_token = None;
+
+                            while let Some(next_token) = tokens.next() {
+                                match next_token {
+                                    Token::DelimiterBraceClose { level }
+                                        if *level == function_body_opening_level =>
+                                    {
+                                        // If encounted an integer literal right before the closing brace,
+                                        // then it is the return value of the function as in Rust.
+                                        // In Rust, the last expression in a function (no semicolon after the value) is the return value.
+                                        if let Some(prev_value_token) = prev_value_token {
+                                            body.push(AstNode::ReturnStatement(Box::new(
+                                                prev_value_token,
+                                            )));
+                                        }
+
+                                        ast_nodes.push(AstNode::FunctionDefinition {
+                                            name,
+                                            parameters,
+                                            body,
+                                        });
+                                        continue 'main_parse_loop;
+                                    }
+                                    Token::LiteralInteger(value) => {
+                                        prev_value_token = Some(AstNode::LiteralInteger(*value));
+                                    }
+                                    _ => {
+                                        prev_value_token = None;
+                                    }
+                                }
+                            }
+                        } else {
+                            return Err("Expected opening brace after function parameters.".into());
+                        }
                     } else {
                         return Err("Expected opening parenthesis after function name. Instead, no opening parenthesis found.".into());
                     }
@@ -129,16 +178,21 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
     // This simplifies the logic in certain places.
     let chars = code.chars().chain(std::iter::once(' '));
     let mut chars = chars.enumerate().peekable();
-
+    let mut brace_level = 0usize;
     let mut tokens = vec![];
 
     while let Some((i, c)) = chars.next() {
         match c {
             '}' => {
-                tokens.push(Token::DelimiterBraceClose);
+                if brace_level == 0 {
+                    return Err("Unexpected closing brace. There are too many closing braces compared to opening braces.".into());
+                }
+                brace_level -= 1;
+                tokens.push(Token::DelimiterBraceClose { level: brace_level });
             }
             '{' => {
-                tokens.push(Token::DelimiterBraceOpen);
+                tokens.push(Token::DelimiterBraceOpen { level: brace_level });
+                brace_level += 1;
             }
             ':' => {
                 tokens.push(Token::DelimiterColon);
@@ -165,7 +219,12 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                 tokens.push(Token::OperatorMultiplication);
             }
             '-' => {
-                tokens.push(Token::OperatorSubtraction);
+                if let Some((_, '>')) = chars.peek() {
+                    chars.next();
+                    tokens.push(Token::OperatorArrow);
+                } else {
+                    tokens.push(Token::OperatorSubtraction);
+                }
             }
             ';' => {
                 tokens.push(Token::OperatorStatementEnd);
@@ -234,15 +293,41 @@ mod tests {
             Token::Identifier("main"),
             Token::DelimiterParenthesisOpen,
             Token::DelimiterParenthesisClose,
-            Token::DelimiterBraceOpen,
-            Token::DelimiterBraceClose,
+            Token::DelimiterBraceOpen { level: 0 },
+            Token::DelimiterBraceClose { level: 0 },
         ];
         let ast_nodes = parse(&tokens).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
                 name: "main",
-                parameters: vec![]
+                parameters: vec![],
+                body: vec![]
+            }]
+        );
+    }
+    #[test]
+    fn parse_function_definition_without_parameters_and_one_expression_as_return_value() {
+        let tokens = vec![
+            Token::KeywordFn,
+            Token::Identifier("main"),
+            Token::DelimiterParenthesisOpen,
+            Token::DelimiterParenthesisClose,
+            Token::OperatorArrow,
+            Token::Identifier("I32"),
+            Token::DelimiterBraceOpen { level: 0 },
+            Token::LiteralInteger(5),
+            Token::DelimiterBraceClose { level: 0 },
+        ];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::FunctionDefinition {
+                name: "main",
+                parameters: vec![],
+                body: vec![AstNode::ReturnStatement(Box::new(AstNode::LiteralInteger(
+                    5
+                )))]
             }]
         );
     }
@@ -256,15 +341,16 @@ mod tests {
             Token::DelimiterColon,
             Token::Identifier("I32"),
             Token::DelimiterParenthesisClose,
-            Token::DelimiterBraceOpen,
-            Token::DelimiterBraceClose,
+            Token::DelimiterBraceOpen { level: 0 },
+            Token::DelimiterBraceClose { level: 0 },
         ];
         let ast_nodes = parse(&tokens).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
                 name: "main",
-                parameters: vec![AstNodeFunctionParameter { name: "x" }]
+                parameters: vec![AstNodeFunctionParameter { name: "x" }],
+                body: vec![]
             }]
         );
     }
@@ -282,8 +368,8 @@ mod tests {
             Token::DelimiterColon,
             Token::Identifier("I32"),
             Token::DelimiterParenthesisClose,
-            Token::DelimiterBraceOpen,
-            Token::DelimiterBraceClose,
+            Token::DelimiterBraceOpen { level: 0 },
+            Token::DelimiterBraceClose { level: 0 },
         ];
         let ast_nodes = parse(&tokens).unwrap();
         assert_eq!(
@@ -293,7 +379,8 @@ mod tests {
                 parameters: vec![
                     AstNodeFunctionParameter { name: "x" },
                     AstNodeFunctionParameter { name: "y" }
-                ]
+                ],
+                body: vec![]
             }]
         );
     }
@@ -309,8 +396,8 @@ mod tests {
                 Token::Identifier("main"),
                 Token::DelimiterParenthesisOpen,
                 Token::DelimiterParenthesisClose,
-                Token::DelimiterBraceOpen,
-                Token::DelimiterBraceClose
+                Token::DelimiterBraceOpen { level: 0 },
+                Token::DelimiterBraceClose { level: 0 }
             ]
         );
     }
