@@ -338,7 +338,7 @@ mod tests {
         );
     }
     #[test]
-    fn tokenize_operator_arithmetic() {
+    fn tokenize_operators_arithmetic() {
         // All together
         let code = "+-*/";
         let tokens = tokenize(code).unwrap();
