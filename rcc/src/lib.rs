@@ -194,10 +194,10 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                     tokens.push(Token::LiteralInteger(value));
                 } else if c.is_alphabetic() {
                     // In this state, we expect an identifier or a keyword.
-                    let mut identifier_index_end = i;
+                    let mut identifier_or_keyword_index_end = i;
 
                     while let Some((_, next_c)) = chars.peek() {
-                        identifier_index_end += 1;
+                        identifier_or_keyword_index_end += 1;
                         if next_c.is_alphanumeric() {
                             chars.next();
                         } else {
@@ -205,13 +205,13 @@ pub fn tokenize(code: &str) -> Result<Vec<Token>, String> {
                         }
                     }
 
-                    match &code[i..identifier_index_end] {
+                    match &code[i..identifier_or_keyword_index_end] {
                         "fn" => tokens.push(Token::KeywordFn),
                         "let" => tokens.push(Token::KeywordLet),
                         "true" => tokens.push(Token::LiteralBooleanTrue),
                         "false" => tokens.push(Token::LiteralBooleanFalse),
                         _ => {
-                            let identifier = &code[i..identifier_index_end];
+                            let identifier = &code[i..identifier_or_keyword_index_end];
                             tokens.push(Token::Identifier(identifier));
                         }
                     }
