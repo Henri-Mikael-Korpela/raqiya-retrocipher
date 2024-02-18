@@ -324,7 +324,7 @@ mod tests {
         );
     }
     #[test]
-    fn tokenize_literal_integers() {
+    fn tokenize_literals_integers() {
         let code = "5 10 200 1000";
         let tokens = tokenize(code).unwrap();
         assert_eq!(
