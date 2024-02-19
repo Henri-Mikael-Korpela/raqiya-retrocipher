@@ -91,7 +91,6 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a
                 {
                     // Safety: Peeking for the identifier was successful before. Therefore, getting it here is safe.
                     let identifier_token = tokens.next().unwrap();
-                    println!("Identifier token: {:?}", identifier_token);
 
                     if let Some(Token {
                         type_: TokenType::DelimiterParenthesisOpen,
