@@ -9,6 +9,7 @@ pub enum AstNode<'a> {
     Identifier(&'a str),
     LiteralInteger(i64),
     ReturnStatement(Box<AstNode<'a>>),
+    VariableDefinition(&'a str, Box<AstNode<'a>>),
 }
 #[derive(Debug, PartialEq)]
 pub struct AstNodeFunctionParameter<'a> {
@@ -192,6 +193,45 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                 } else {
                     return Err(format!(
                         "Expected function name after '{KEYWORD_FN}' keyword. Instead, no identifier for function name found."
+                    ));
+                }
+            }
+            Token::KeywordLet => {
+                if let Some(Token::Identifier(name)) = tokens.peek() {
+                    tokens.next();
+
+                    if let Some(Token::OperatorAssignment) = tokens.peek() {
+                        tokens.next();
+
+                        if let Some(Token::LiteralInteger(value)) = tokens.peek() {
+                            tokens.next();
+                            if let Some(Token::OperatorStatementEnd) = tokens.peek() {
+                                tokens.next();
+                                ast_nodes.push(AstNode::VariableDefinition(
+                                    name,
+                                    Box::new(AstNode::LiteralInteger(*value)),
+                                ));
+                            } else {
+                                return Err(format!(
+                                    "Expected statement end after variable definition. Instead, found: {:?}",
+                                    tokens.peek()
+                                ));
+                            }
+                        } else {
+                            return Err(format!(
+                                "Expected integer literal after assignment operator. Instead, found: {:?}",
+                                tokens.peek()
+                            ));
+                        }
+                    } else {
+                        return Err(format!(
+                            "Expected assignment operator after variable name. Instead, found: {:?}",
+                            tokens.peek()
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
                     ));
                 }
             }
@@ -457,6 +497,24 @@ mod tests {
             }]
         );
     }
+    #[test]
+    fn parse_variable_definition_with_integer_literal() {
+        let tokens = vec![
+            Token::KeywordLet,
+            Token::Identifier("x"),
+            Token::OperatorAssignment,
+            Token::LiteralInteger(5),
+            Token::OperatorStatementEnd,
+        ];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                "x",
+                Box::new(AstNode::LiteralInteger(5))
+            )]
+        );
+    }
 
     #[test]
     fn tokenize_expression_arithmetic_addition() {
@@ -539,7 +597,7 @@ mod tests {
         );
     }
     #[test]
-    fn tokenize_variable_definition() {
+    fn tokenize_variable_definition_with_automatic_type_deduction() {
         let code = "let x = 5;";
         let tokens = tokenize(code).unwrap();
         assert_eq!(
