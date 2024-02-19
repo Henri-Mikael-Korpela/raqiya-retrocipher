@@ -8,7 +8,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args();
     args.next(); // Skip the program name
 
-    let Some(file_path) = args.next() else {
+    let Some(file_path) = &args.next() else {
         return Err("No file path provided".into());
     };
 
@@ -17,7 +17,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let tokens = rcc::tokenize(&file_content)?;
 
-    let ast_nodes = rcc::parse(&tokens, rcc::Scope::Global)?;
+    let ast_nodes = rcc::parse(&tokens, rcc::Scope::Global).map_err(|err| {
+        format!(
+            "Error in {}:{}:{}: {}",
+            file_path, err.line, err.col, err.message
+        )
+    })?;
     println!("{:?}", ast_nodes);
 
     Ok(())
