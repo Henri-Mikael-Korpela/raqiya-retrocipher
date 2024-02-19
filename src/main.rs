@@ -17,12 +17,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let tokens = rcc::tokenize(&file_content)?;
 
-    let ast_nodes = rcc::parse(&tokens, rcc::Scope::Global).map_err(|err| {
-        format!(
-            "Error in {}:{}:{}: {}",
-            file_path, err.line, err.col, err.message
-        )
-    })?;
+    let ast_nodes = rcc::parse(&tokens, rcc::Scope::Global)
+        .map_err(|err| format!("Error in {}:{}: {}", file_path, err.position(), err.message))?;
     println!("{:?}", ast_nodes);
 
     Ok(())

@@ -26,9 +26,14 @@ pub enum AstNodeVariable<'a> {
 
 #[derive(Debug)]
 pub struct ParseError {
-    pub line: usize,
-    pub col: usize,
+    line: usize,
+    col: usize,
     pub message: String,
+}
+impl ParseError {
+    pub fn position(&self) -> String {
+        format!("{}:{}", self.line, self.col)
+    }
 }
 
 #[derive(Debug, PartialEq)]
