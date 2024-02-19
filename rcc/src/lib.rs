@@ -9,11 +9,19 @@ pub enum AstNode<'a> {
     Identifier(&'a str),
     LiteralInteger(i64),
     ReturnStatement(Box<AstNode<'a>>),
-    VariableDefinition(&'a str, Box<AstNode<'a>>),
+    VariableDefinition(AstNodeVariable<'a>, Box<AstNode<'a>>),
 }
 #[derive(Debug, PartialEq)]
 pub struct AstNodeFunctionParameter<'a> {
     name: &'a str,
+}
+#[derive(Debug, PartialEq)]
+pub enum AstNodeVariable<'a> {
+    WithType {
+        identifier_name: &'a str,
+        type_name: &'a str,
+    },
+    WithoutType(&'a str),
 }
 
 const KEYWORD_FN: &str = "fn";
@@ -200,34 +208,86 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                 if let Some(Token::Identifier(name)) = tokens.peek() {
                     tokens.next();
 
-                    if let Some(Token::OperatorAssignment) = tokens.peek() {
-                        tokens.next();
-
-                        if let Some(Token::LiteralInteger(value)) = tokens.peek() {
+                    match tokens.peek() {
+                        Some(Token::DelimiterColon) => {
                             tokens.next();
-                            if let Some(Token::OperatorStatementEnd) = tokens.peek() {
+
+                            let variable_type_name =
+                                if let Some(Token::Identifier(type_name)) = tokens.peek() {
+                                    tokens.next();
+                                    type_name
+                                } else {
+                                    return Err(format!(
+                                        "Expected type after colon. Instead, found: {:?}",
+                                        tokens.peek()
+                                    ));
+                                };
+
+                            if let Some(Token::OperatorAssignment) = tokens.peek() {
                                 tokens.next();
-                                ast_nodes.push(AstNode::VariableDefinition(
-                                    name,
-                                    Box::new(AstNode::LiteralInteger(*value)),
-                                ));
+
+                                if let Some(Token::LiteralInteger(value)) = tokens.peek() {
+                                    tokens.next();
+
+                                    if let Some(Token::OperatorStatementEnd) = tokens.peek() {
+                                        tokens.next();
+                                        ast_nodes.push(AstNode::VariableDefinition(
+                                            AstNodeVariable::WithType {
+                                                identifier_name: name,
+                                                type_name: variable_type_name,
+                                            },
+                                            Box::new(AstNode::LiteralInteger(*value)),
+                                        ));
+                                    } else {
+                                        return Err(format!(
+                                            "Expected statement end after variable definition. Instead, found: {:?}",
+                                            tokens.peek()
+                                        ));
+                                    }
+                                } else {
+                                    return Err(format!(
+                                        "Expected integer literal after assignment operator. Instead, found: {:?}",
+                                        tokens.peek()
+                                    ));
+                                }
                             } else {
                                 return Err(format!(
-                                    "Expected statement end after variable definition. Instead, found: {:?}",
+                                    "Expected assignment operator after variable name. Instead, found: {:?}",
                                     tokens.peek()
                                 ));
                             }
-                        } else {
+                        }
+                        Some(Token::OperatorAssignment) => {
+                            tokens.next();
+
+                            if let Some(Token::LiteralInteger(value)) = tokens.peek() {
+                                tokens.next();
+
+                                if let Some(Token::OperatorStatementEnd) = tokens.peek() {
+                                    tokens.next();
+                                    ast_nodes.push(AstNode::VariableDefinition(
+                                        AstNodeVariable::WithoutType(name),
+                                        Box::new(AstNode::LiteralInteger(*value)),
+                                    ));
+                                } else {
+                                    return Err(format!(
+                                        "Expected statement end after variable definition. Instead, found: {:?}",
+                                        tokens.peek()
+                                    ));
+                                }
+                            } else {
+                                return Err(format!(
+                                    "Expected integer literal after assignment operator. Instead, found: {:?}",
+                                    tokens.peek()
+                                ));
+                            }
+                        }
+                        _ => {
                             return Err(format!(
-                                "Expected integer literal after assignment operator. Instead, found: {:?}",
+                                "Expected assignment operator after variable name. Instead, found: {:?}",
                                 tokens.peek()
                             ));
                         }
-                    } else {
-                        return Err(format!(
-                            "Expected assignment operator after variable name. Instead, found: {:?}",
-                            tokens.peek()
-                        ));
                     }
                 } else {
                     return Err(format!(
@@ -498,7 +558,7 @@ mod tests {
         );
     }
     #[test]
-    fn parse_variable_definition_with_integer_literal() {
+    fn parse_variable_definition_with_automatic_type_deduction_and_with_integer_literal() {
         let tokens = vec![
             Token::KeywordLet,
             Token::Identifier("x"),
@@ -510,7 +570,30 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
-                "x",
+                AstNodeVariable::WithoutType("x"),
+                Box::new(AstNode::LiteralInteger(5))
+            )]
+        );
+    }
+    #[test]
+    fn parse_variable_definition_with_type_and_with_integer_literal() {
+        let tokens = vec![
+            Token::KeywordLet,
+            Token::Identifier("x"),
+            Token::DelimiterColon,
+            Token::Identifier("I32"),
+            Token::OperatorAssignment,
+            Token::LiteralInteger(5),
+            Token::OperatorStatementEnd,
+        ];
+        let ast_nodes = parse(&tokens).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariable::WithType {
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
                 Box::new(AstNode::LiteralInteger(5))
             )]
         );
