@@ -17,7 +17,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let tokens = rcc::tokenize(&file_content)?;
 
-    let ast_nodes = rcc::parse(&tokens)?;
+    let ast_nodes = rcc::parse(&tokens, rcc::Scope::Global)?;
     println!("{:?}", ast_nodes);
 
     Ok(())

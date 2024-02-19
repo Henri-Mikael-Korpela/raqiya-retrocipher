@@ -24,6 +24,12 @@ pub enum AstNodeVariable<'a> {
     WithoutType(&'a str),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Scope {
+    Global,
+    Function,
+}
+
 const KEYWORD_FN: &str = "fn";
 const KEYWORD_LET: &str = "let";
 const KEYWORD_FALSE: &str = "false";
@@ -52,7 +58,7 @@ pub enum Token<'a> {
     OperatorStatementEnd,
 }
 
-pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
+pub fn parse<'a>(tokens: &Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a>>, String> {
     let mut tokens = tokens.iter().peekable();
 
     let mut ast_nodes = vec![];
@@ -205,6 +211,10 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>) -> Result<Vec<AstNode<'a>>, String> {
                 }
             }
             Token::KeywordLet => {
+                if scope == Scope::Global {
+                    return Err(format!("Global scope does not support variable definitions using keyword '{KEYWORD_LET}'."));
+                }
+
                 if let Some(Token::Identifier(name)) = tokens.peek() {
                     tokens.next();
 
@@ -431,7 +441,7 @@ mod tests {
             Token::DelimiterBraceOpen { level: 0 },
             Token::DelimiterBraceClose { level: 0 },
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
@@ -454,7 +464,7 @@ mod tests {
             Token::LiteralInteger(5),
             Token::DelimiterBraceClose { level: 0 },
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
@@ -488,7 +498,7 @@ mod tests {
             Token::Identifier("y"),
             Token::DelimiterBraceClose { level: 0 },
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
@@ -517,7 +527,7 @@ mod tests {
             Token::DelimiterBraceOpen { level: 0 },
             Token::DelimiterBraceClose { level: 0 },
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
@@ -544,7 +554,7 @@ mod tests {
             Token::DelimiterBraceOpen { level: 0 },
             Token::DelimiterBraceClose { level: 0 },
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
@@ -566,7 +576,7 @@ mod tests {
             Token::LiteralInteger(5),
             Token::OperatorStatementEnd,
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -586,7 +596,7 @@ mod tests {
             Token::LiteralInteger(5),
             Token::OperatorStatementEnd,
         ];
-        let ast_nodes = parse(&tokens).unwrap();
+        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
