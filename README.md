@@ -11,3 +11,16 @@
 Currently, it is intended to support compilation to MIPS assembly only.
 
 The compiler has a particular use case: to help out reverse engineering Spyro the Dragon and then port it to PC and Linux. See [OpenSpyro](https://github.com/Henri-Mikael-Korpela/open-spyro) for more information about the project.
+
+## About the documentation
+
+This documentation is a work in progress. It may contain information about how the language works, which may not be implemented yet.
+
+## Built-in types
+
+- Boolean: `Bool` - With values `true` and `false`.
+- Character: `Charu8` - "u8" indicates a character that can be stored in an unsigned 8-bit integer (basically ASCII-compatible character).
+- Integer: `I8 I16 I32 U8 U16 U32` - Each number stands for number of bits they can hold.
+- String: `StrNull` - "null" indicates that a string is null-terminated (character `\0` at the end of string value).
+
+Currently, there is no support for 64-bit integers, because 64-bit integers are not (probably) needed for dealing with assembly on MIPS R3000 CPU.
