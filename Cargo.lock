@@ -6,6 +6,14 @@ version = 3
 name = "raqiya-retrocipher"
 version = "0.1.0"
 dependencies = [
+ "rc2mips_r3000",
+ "rcc",
+]
+
+[[package]]
+name = "rc2mips_r3000"
+version = "0.1.0"
+dependencies = [
  "rcc",
 ]
 

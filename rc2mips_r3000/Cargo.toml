@@ -1,0 +1,7 @@
+[package]
+name = "rc2mips_r3000"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rcc = { path = "../rcc" }

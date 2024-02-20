@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rc2mips_r3000 = { path = "./rc2mips_r3000" }
 rcc = { path = "./rcc" }
 
 [workspace]
-members = ["rcc"]
+members = ["rc2mips_r3000", "rcc"]
