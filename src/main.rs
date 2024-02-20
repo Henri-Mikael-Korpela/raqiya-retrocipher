@@ -6,7 +6,7 @@ fn main() {
         std::process::exit(1);
     }
 }
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), String> {
     let mut args = std::env::args();
     args.next(); // Skip the program name
 
@@ -21,7 +21,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(next_arg) = args.next() {
                     file_path = Some(next_arg);
                 } else {
-                    return Err(format!("No input file path given after option \"{arg}\".").into());
+                    return Err(format!("No input file path given after option \"{arg}\"."));
                 }
             }
             "--out-asm" => {
@@ -30,8 +30,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     return Err(format!(
                         "No output assembly file path given after option \"{arg}\"."
-                    )
-                    .into());
+                    ));
                 }
             }
             _ => {}
@@ -40,7 +39,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ensure that an input file path is given in the command line arguments
     let Some(file_path) = &file_path else {
-        return Err("No file path provided in command line arguments.".into());
+        return Err(String::from(
+            "No file path provided in command line arguments.",
+        ));
     };
 
     let file_content = std::fs::read_to_string(file_path)
@@ -63,7 +64,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .join("\n");
 
         if let Err(err) = fs::write(output_assembly_file_path, assembly_content) {
-            return Err(format!("Failed to write to the output assembly file: {}", err).into());
+            return Err(format!(
+                "Failed to write to the output assembly file: {}",
+                err
+            ));
         }
     } else {
         println!("{:?}", ast_nodes);
