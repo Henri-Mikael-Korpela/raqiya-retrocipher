@@ -55,6 +55,7 @@ pub struct Token<'a> {
 }
 #[derive(Debug, PartialEq)]
 pub enum TokenType<'a> {
+    Attribute(&'a str),
     DelimiterBraceClose { level: usize },
     DelimiterBraceOpen { level: usize },
     DelimiterColon,
@@ -593,6 +594,39 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                 current_col = 0;
                 current_line += 1;
             }
+            '#' => {
+                // Skip this character, because it is not stored at part of the attribute token.
+                chars.next();
+
+                let attribute_index_begin = i + 1;
+                let mut attribute_index_end = attribute_index_begin;
+
+                while let Some((j, next_c)) = chars.peek() {
+                    attribute_index_end += 1;
+                    // If the first character of the attribute is a letter or an underscore
+                    if *j == attribute_index_begin && next_c.is_alphabetic() || *next_c == '_' {
+                        chars.next();
+                    }
+                    // If any character following the first character is a letter, a digit or an underscore
+                    else if *j > attribute_index_begin && next_c.is_alphanumeric()
+                        || *next_c == '_'
+                    {
+                        chars.next();
+                    }
+                    // If no valid character found for an attribute name
+                    else {
+                        break;
+                    }
+                }
+
+                let attribute = &code[attribute_index_begin..attribute_index_end];
+                tokens.push(Token {
+                    col: current_col,
+                    line: current_line,
+                    type_: TokenType::Attribute(attribute),
+                });
+                current_col += attribute_index_end - attribute_index_begin + 1; // + 1 for the '#' character.
+            }
             _ => {
                 if c.is_digit(10) {
                     let mut value_index_end = i;
@@ -883,6 +917,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tokenize_attribute() {
+        let code = "#attribute";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![token_new!(TokenType::Attribute("attribute"), 1, 0)]
+        );
+    }
+    #[test]
+    fn tokenize_attributes() {
+        let code = "#attribute1 #attribute2";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                token_new!(TokenType::Attribute("attribute1"), 1, 0),
+                token_new!(TokenType::Attribute("attribute2"), 1, 12),
+            ]
+        );
+    }
     #[test]
     fn tokenize_expression_arithmetic_addition() {
         let code = "5 + 10";
