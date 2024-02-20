@@ -52,10 +52,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|err| format!("Error in {}:{}: {}", file_path, err.position(), err.message))?;
 
     if let Some(output_assembly_file_path) = &output_assembly_file_path {
-        let assembly_nodes = rc2mips_r3000::compile_to_assembly(ast_nodes);
-        println!("{:?}", assembly_nodes);
+        let assembly_nodes = rc2mips_r3000::compile_to_assembly(&ast_nodes);
 
-        if let Err(err) = fs::write(output_assembly_file_path, "") {
+        // Convert each assembly node to a string and join them together
+        // so that each node is on its own line.
+        let assembly_content = assembly_nodes
+            .iter()
+            .map(|node| node.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        if let Err(err) = fs::write(output_assembly_file_path, assembly_content) {
             return Err(format!("Failed to write to the output assembly file: {}", err).into());
         }
     } else {
