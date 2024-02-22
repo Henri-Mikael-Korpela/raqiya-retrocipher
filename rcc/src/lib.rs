@@ -9,19 +9,23 @@ pub enum AstNode<'a> {
     Identifier(&'a str),
     LiteralInteger(i64),
     ReturnStatement(Box<AstNode<'a>>),
-    VariableDefinition(AstNodeVariable<'a>, Box<AstNode<'a>>),
+    VariableDefinition(AstNodeVariableIdentifier<'a>, Box<AstNode<'a>>),
 }
 #[derive(Debug, PartialEq)]
 pub struct AstNodeFunctionParameter<'a> {
     name: &'a str,
 }
 #[derive(Debug, PartialEq)]
-pub enum AstNodeVariable<'a> {
+pub enum AstNodeVariableIdentifier<'a> {
     WithType {
+        attributes: Vec<&'a str>,
         identifier_name: &'a str,
         type_name: &'a str,
     },
-    WithoutType(&'a str),
+    WithoutType {
+        attributes: Vec<&'a str>,
+        identifier_name: &'a str,
+    },
 }
 
 #[derive(Debug)]
@@ -315,145 +319,177 @@ fn parse_variable_definition<'a>(
     token: &Token<'_>,
     scope: &Scope,
 ) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
-    if *scope == Scope::Global {
-        return Err(ParseError {
-            line: token.line,
-            col: token.col,
-            message: format!(
-                "Global scope does not support variable definitions using keyword '{KEYWORD_LET}'."
-            ),
-        });
-    }
-
+    // Explicit type for vec here, because otherwisely attributes would have type &&str automatically decuded instead of &str.
+    let mut attributes = Vec::<&str>::new();
     let mut ast_nodes = vec![];
 
-    if let Some(Token {
-        type_: TokenType::Identifier(name),
-        ..
-    }) = tokens.peek()
-    {
-        tokens.next();
-
+    'variable_defition_parsing_loop: loop {
         match tokens.peek() {
             Some(Token {
-                type_: TokenType::DelimiterColon,
+                type_: TokenType::Attribute(name),
+                ..
+            }) => {
+                tokens.next();
+                attributes.push(name);
+
+                while let Some(Token {
+                    type_: TokenType::Attribute(name),
+                    ..
+                }) = tokens.peek()
+                {
+                    tokens.next();
+                    attributes.push(name);
+                }
+
+                // Ensure that static variables are only allowed in the global scope.
+                if *scope != Scope::Global && attributes.contains(&"static") {
+                    return Err(ParseError::new_with_token(
+                        token,
+                        format!(
+                            "Static variables are only allowed in the global scope, not in this scope."
+                        ),
+                    ));
+                }
+
+                continue 'variable_defition_parsing_loop;
+            }
+            Some(Token {
+                type_: TokenType::Identifier(name),
                 ..
             }) => {
                 tokens.next();
 
-                let variable_type_name = if let Some(Token {
-                    type_: TokenType::Identifier(type_name),
-                    ..
-                }) = tokens.peek()
-                {
-                    tokens.next();
-                    type_name
-                } else {
-                    return Err(ParseError::new_with_token(
-                        token,
-                        format!("Expected type after colon.",),
-                    ));
-                };
-
-                if let Some(Token {
-                    type_: TokenType::OperatorAssignment,
-                    ..
-                }) = tokens.peek()
-                {
-                    tokens.next();
-
-                    if let Some(Token {
-                        type_: TokenType::LiteralInteger(value),
+                match tokens.peek() {
+                    Some(Token {
+                        type_: TokenType::DelimiterColon,
                         ..
-                    }) = tokens.peek()
-                    {
+                    }) => {
                         tokens.next();
 
-                        if let Some(Token {
-                            type_: TokenType::OperatorStatementEnd,
+                        let variable_type_name = if let Some(Token {
+                            type_: TokenType::Identifier(type_name),
                             ..
                         }) = tokens.peek()
                         {
                             tokens.next();
-                            ast_nodes.push(AstNode::VariableDefinition(
-                                AstNodeVariable::WithType {
-                                    identifier_name: name,
-                                    type_name: variable_type_name,
-                                },
-                                Box::new(AstNode::LiteralInteger(*value)),
-                            ));
+                            type_name
                         } else {
                             return Err(ParseError::new_with_token(
                                 token,
-                                format!("Expected statement end after variable definition.",),
+                                format!("Expected type after colon.",),
+                            ));
+                        };
+
+                        if let Some(Token {
+                            type_: TokenType::OperatorAssignment,
+                            ..
+                        }) = tokens.peek()
+                        {
+                            tokens.next();
+
+                            if let Some(Token {
+                                type_: TokenType::LiteralInteger(value),
+                                ..
+                            }) = tokens.peek()
+                            {
+                                tokens.next();
+
+                                if let Some(Token {
+                                    type_: TokenType::OperatorStatementEnd,
+                                    ..
+                                }) = tokens.peek()
+                                {
+                                    tokens.next();
+                                    ast_nodes.push(AstNode::VariableDefinition(
+                                        AstNodeVariableIdentifier::WithType {
+                                            attributes,
+                                            identifier_name: name,
+                                            type_name: variable_type_name,
+                                        },
+                                        Box::new(AstNode::LiteralInteger(*value)),
+                                    ));
+                                } else {
+                                    return Err(ParseError::new_with_token(
+                                        token,
+                                        format!(
+                                            "Expected statement end after variable definition.",
+                                        ),
+                                    ));
+                                }
+                            } else {
+                                return Err(ParseError::new_with_token(
+                                    token,
+                                    format!("Expected integer literal after assignment operator.",),
+                                ));
+                            }
+                        } else {
+                            return Err(ParseError::new_with_token(
+                                token,
+                                format!("Expected assignment operator after variable name.",),
                             ));
                         }
-                    } else {
-                        return Err(ParseError::new_with_token(
-                            token,
-                            format!("Expected integer literal after assignment operator.",),
-                        ));
                     }
-                } else {
-                    return Err(ParseError::new_with_token(
-                        token,
-                        format!("Expected assignment operator after variable name.",),
-                    ));
-                }
-            }
-            Some(Token {
-                type_: TokenType::OperatorAssignment,
-                ..
-            }) => {
-                tokens.next();
-
-                if let Some(Token {
-                    type_: TokenType::LiteralInteger(value),
-                    ..
-                }) = tokens.peek()
-                {
-                    tokens.next();
-
-                    if let Some(Token {
-                        type_: TokenType::OperatorStatementEnd,
+                    Some(Token {
+                        type_: TokenType::OperatorAssignment,
                         ..
-                    }) = tokens.peek()
-                    {
+                    }) => {
                         tokens.next();
-                        ast_nodes.push(AstNode::VariableDefinition(
-                            AstNodeVariable::WithoutType(name),
-                            Box::new(AstNode::LiteralInteger(*value)),
-                        ));
-                    } else {
+
+                        if let Some(Token {
+                            type_: TokenType::LiteralInteger(value),
+                            ..
+                        }) = tokens.peek()
+                        {
+                            tokens.next();
+
+                            if let Some(Token {
+                                type_: TokenType::OperatorStatementEnd,
+                                ..
+                            }) = tokens.peek()
+                            {
+                                tokens.next();
+                                ast_nodes.push(AstNode::VariableDefinition(
+                                    AstNodeVariableIdentifier::WithoutType {
+                                        attributes: vec![],
+                                        identifier_name: name,
+                                    },
+                                    Box::new(AstNode::LiteralInteger(*value)),
+                                ));
+                            } else {
+                                return Err(ParseError::new_with_token(
+                                    token,
+                                    format!("Expected statement end after variable definition.",),
+                                ));
+                            }
+                        } else {
+                            return Err(ParseError::new_with_token(
+                                token,
+                                format!("Expected integer literal after assignment operator.",),
+                            ));
+                        }
+                    }
+                    _ => {
                         return Err(ParseError::new_with_token(
                             token,
-                            format!("Expected statement end after variable definition.",),
+                            format!(
+                                "Expected type or assignment operator after variable name. Instead, found: {:?}",
+                                tokens.peek()
+                            ),
                         ));
                     }
-                } else {
-                    return Err(ParseError::new_with_token(
-                        token,
-                        format!("Expected integer literal after assignment operator.",),
-                    ));
                 }
+
+                break;
             }
             _ => {
                 return Err(ParseError::new_with_token(
                     token,
                     format!(
-                        "Expected type or assignment operator after variable name. Instead, found: {:?}",
-                        tokens.peek()
+                        "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
                     ),
                 ));
             }
         }
-    } else {
-        return Err(ParseError::new_with_token(
-            token,
-            format!(
-                "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
-            ),
-        ));
     }
 
     Ok((ast_nodes, tokens))
@@ -877,6 +913,31 @@ mod tests {
         );
     }
     #[test]
+    fn parse_variable_definition_with_attributes() {
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Attribute("static")),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("I32")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralInteger(5)),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec!["static"],
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
+                Box::new(AstNode::LiteralInteger(5))
+            )]
+        );
+    }
+    #[test]
     fn parse_variable_definition_with_automatic_type_deduction_and_with_integer_literal() {
         let tokens = vec![
             token_new!(TokenType::KeywordLet),
@@ -889,7 +950,10 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
-                AstNodeVariable::WithoutType("x"),
+                AstNodeVariableIdentifier::WithoutType {
+                    attributes: vec![],
+                    identifier_name: "x"
+                },
                 Box::new(AstNode::LiteralInteger(5))
             )]
         );
@@ -909,7 +973,8 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
-                AstNodeVariable::WithType {
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![],
                     identifier_name: "x",
                     type_name: "I32"
                 },
