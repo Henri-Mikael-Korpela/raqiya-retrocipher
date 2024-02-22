@@ -77,8 +77,10 @@ pub enum TokenType<'a> {
     OperatorStatementEnd,
 }
 
-pub fn parse<'a>(tokens: &Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a>>, ParseError> {
-    let mut tokens = tokens.iter().peekable();
+type PeekableTokenIter<'a> = std::iter::Peekable<std::slice::Iter<'a, Token<'a>>>;
+
+pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a>>, ParseError> {
+    let mut tokens: PeekableTokenIter<'a> = tokens.iter().peekable();
 
     let mut ast_nodes = vec![];
 
@@ -288,167 +290,14 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a
                 }
             }
             TokenType::KeywordLet => {
-                if scope == Scope::Global {
-                    return Err(ParseError {
-                        line: token.line,
-                        col: token.col,
-                        message: format!("Global scope does not support variable definitions using keyword '{KEYWORD_LET}'.")
-                    });
-                }
-
-                if let Some(Token {
-                    type_: TokenType::Identifier(name),
-                    ..
-                }) = tokens.peek()
-                {
-                    tokens.next();
-
-                    match tokens.peek() {
-                        Some(Token {
-                            type_: TokenType::DelimiterColon,
-                            ..
-                        }) => {
-                            tokens.next();
-
-                            let variable_type_name = if let Some(Token {
-                                type_: TokenType::Identifier(type_name),
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-                                type_name
-                            } else {
-                                return Err(ParseError {
-                                    line: token.line,
-                                    col: token.col,
-                                    message: format!(
-                                        "Expected type after colon. Instead, found: {:?}",
-                                        tokens.peek()
-                                    ),
-                                });
-                            };
-
-                            if let Some(Token {
-                                type_: TokenType::OperatorAssignment,
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-
-                                if let Some(Token {
-                                    type_: TokenType::LiteralInteger(value),
-                                    ..
-                                }) = tokens.peek()
-                                {
-                                    tokens.next();
-
-                                    if let Some(Token {
-                                        type_: TokenType::OperatorStatementEnd,
-                                        ..
-                                    }) = tokens.peek()
-                                    {
-                                        tokens.next();
-                                        ast_nodes.push(AstNode::VariableDefinition(
-                                            AstNodeVariable::WithType {
-                                                identifier_name: name,
-                                                type_name: variable_type_name,
-                                            },
-                                            Box::new(AstNode::LiteralInteger(*value)),
-                                        ));
-                                    } else {
-                                        return Err(ParseError {
-                                            line: token.line,
-                                            col: token.col,
-                                            message: format!(
-                                                "Expected statement end after variable definition. Instead, found: {:?}",
-                                                tokens.peek()
-                                            )
-                                        });
-                                    }
-                                } else {
-                                    return Err(ParseError {
-                                        line: token.line,
-                                        col: token.col,
-                                        message: format!(
-                                            "Expected integer literal after assignment operator. Instead, found: {:?}",
-                                            tokens.peek()
-                                        )
-                                    });
-                                }
-                            } else {
-                                return Err(ParseError {
-                                    line: token.line,
-                                    col: token.col,
-                                    message: format!(
-                                        "Expected assignment operator after variable name. Instead, found: {:?}",
-                                        tokens.peek()
-                                    )
-                                });
-                            }
-                        }
-                        Some(Token {
-                            type_: TokenType::OperatorAssignment,
-                            ..
-                        }) => {
-                            tokens.next();
-
-                            if let Some(Token {
-                                type_: TokenType::LiteralInteger(value),
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-
-                                if let Some(Token {
-                                    type_: TokenType::OperatorStatementEnd,
-                                    ..
-                                }) = tokens.peek()
-                                {
-                                    tokens.next();
-                                    ast_nodes.push(AstNode::VariableDefinition(
-                                        AstNodeVariable::WithoutType(name),
-                                        Box::new(AstNode::LiteralInteger(*value)),
-                                    ));
-                                } else {
-                                    return Err(ParseError {
-                                        line: token.line,
-                                        col: token.col,
-                                        message: format!(
-                                            "Expected statement end after variable definition. Instead, found: {:?}",
-                                            tokens.peek()
-                                        )
-                                    });
-                                }
-                            } else {
-                                return Err(ParseError {
-                                    line: token.line,
-                                    col: token.col,
-                                    message: format!(
-                                        "Expected integer literal after assignment operator. Instead, found: {:?}",
-                                        tokens.peek()
-                                    )
-                                });
-                            }
-                        }
-                        _ => {
-                            return Err(ParseError {
-                                line: token.line,
-                                col: token.col,
-                                message: format!(
-                                    "Expected assignment operator after variable name. Instead, found: {:?}",
-                                    tokens.peek()
-                                )
-                            });
-                        }
+                match parse_variable_definition(tokens.clone(), token, &scope) {
+                    Ok((new_ast_nodes, new_tokens)) => {
+                        ast_nodes.extend(new_ast_nodes);
+                        tokens = new_tokens;
                     }
-                } else {
-                    return Err(ParseError {
-                        line: token.line,
-                        col: token.col,
-                        message: format!(
-                            "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
-                        )
-                    });
+                    Err(parse_error) => {
+                        return Err(parse_error);
+                    }
                 }
             }
             _ => {}
@@ -456,6 +305,161 @@ pub fn parse<'a>(tokens: &Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a
     }
 
     Ok(ast_nodes)
+}
+fn parse_variable_definition<'a>(
+    mut tokens: PeekableTokenIter<'a>,
+    token: &Token<'_>,
+    scope: &Scope,
+) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
+    if *scope == Scope::Global {
+        return Err(ParseError {
+            line: token.line,
+            col: token.col,
+            message: format!(
+                "Global scope does not support variable definitions using keyword '{KEYWORD_LET}'."
+            ),
+        });
+    }
+
+    let mut ast_nodes = vec![];
+
+    if let Some(Token {
+        type_: TokenType::Identifier(name),
+        ..
+    }) = tokens.peek()
+    {
+        tokens.next();
+
+        match tokens.peek() {
+            Some(Token {
+                type_: TokenType::DelimiterColon,
+                ..
+            }) => {
+                tokens.next();
+
+                let variable_type_name = if let Some(Token {
+                    type_: TokenType::Identifier(type_name),
+                    ..
+                }) = tokens.peek()
+                {
+                    tokens.next();
+                    type_name
+                } else {
+                    return Err(ParseError {
+                        line: token.line,
+                        col: token.col,
+                        message: format!("Expected type after colon.",),
+                    });
+                };
+
+                if let Some(Token {
+                    type_: TokenType::OperatorAssignment,
+                    ..
+                }) = tokens.peek()
+                {
+                    tokens.next();
+
+                    if let Some(Token {
+                        type_: TokenType::LiteralInteger(value),
+                        ..
+                    }) = tokens.peek()
+                    {
+                        tokens.next();
+
+                        if let Some(Token {
+                            type_: TokenType::OperatorStatementEnd,
+                            ..
+                        }) = tokens.peek()
+                        {
+                            tokens.next();
+                            ast_nodes.push(AstNode::VariableDefinition(
+                                AstNodeVariable::WithType {
+                                    identifier_name: name,
+                                    type_name: variable_type_name,
+                                },
+                                Box::new(AstNode::LiteralInteger(*value)),
+                            ));
+                        } else {
+                            return Err(ParseError {
+                                line: token.line,
+                                col: token.col,
+                                message: format!(
+                                    "Expected statement end after variable definition.",
+                                ),
+                            });
+                        }
+                    } else {
+                        return Err(ParseError {
+                            line: token.line,
+                            col: token.col,
+                            message: format!("Expected integer literal after assignment operator."),
+                        });
+                    }
+                } else {
+                    return Err(ParseError {
+                        line: token.line,
+                        col: token.col,
+                        message: format!("Expected assignment operator after variable name.",),
+                    });
+                }
+            }
+            Some(Token {
+                type_: TokenType::OperatorAssignment,
+                ..
+            }) => {
+                tokens.next();
+
+                if let Some(Token {
+                    type_: TokenType::LiteralInteger(value),
+                    ..
+                }) = tokens.peek()
+                {
+                    tokens.next();
+
+                    if let Some(Token {
+                        type_: TokenType::OperatorStatementEnd,
+                        ..
+                    }) = tokens.peek()
+                    {
+                        tokens.next();
+                        ast_nodes.push(AstNode::VariableDefinition(
+                            AstNodeVariable::WithoutType(name),
+                            Box::new(AstNode::LiteralInteger(*value)),
+                        ));
+                    } else {
+                        return Err(ParseError {
+                            line: token.line,
+                            col: token.col,
+                            message: format!("Expected statement end after variable definition."),
+                        });
+                    }
+                } else {
+                    return Err(ParseError {
+                        line: token.line,
+                        col: token.col,
+                        message: format!("Expected integer literal after assignment operator."),
+                    });
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    line: token.line,
+                    col: token.col,
+                    message: format!("Expected assignment operator after variable name."),
+                });
+            }
+        }
+    } else {
+        return Err(ParseError {
+            line: token.line,
+            col: token.col,
+            message: format!(
+                "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
+            )
+        });
+    }
+
+    Ok((ast_nodes, tokens))
 }
 
 /// Parses code in form of a string into a sequence of tokens.
