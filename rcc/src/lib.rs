@@ -31,6 +31,7 @@ pub struct ParseError {
     pub message: String,
 }
 impl ParseError {
+    #[inline]
     fn new_with_token(token: &Token, message: String) -> Self {
         Self {
             line: token.line,
@@ -38,6 +39,7 @@ impl ParseError {
             message,
         }
     }
+    #[inline]
     pub fn position(&self) -> String {
         format!("{}:{}", self.line, self.col)
     }
