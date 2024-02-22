@@ -31,6 +31,13 @@ pub struct ParseError {
     pub message: String,
 }
 impl ParseError {
+    fn new_with_token(token: &Token, message: String) -> Self {
+        Self {
+            line: token.line,
+            col: token.col,
+            message,
+        }
+    }
     pub fn position(&self) -> String {
         format!("{}:{}", self.line, self.col)
     }
@@ -115,14 +122,13 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                         expect_parameter_type = true;
                                         tokens.next();
                                     } else {
-                                        return Err(ParseError {
-                                            line: next_token.line,
-                                            col: next_token.col,
-                                            message: format!(
-                                                "Expected parameter name before comma. Instead, found: {:?}",
+                                        return Err(ParseError::new_with_token(
+                                            next_token,
+                                            format!(
+                                                "Expected parameter name before colon. Instead, found: {:?}",
                                                 next_token
-                                            )
-                                        });
+                                            ),
+                                        ));
                                     }
                                 }
                                 TokenType::DelimiterComma => {
@@ -142,14 +148,13 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                                 });
                                                 parameter_name_token = None;
                                             } else {
-                                                return Err(ParseError {
-                                                    line: next_token.line,
-                                                    col: next_token.col,
-                                                    message: format!(
+                                                return Err(ParseError::new_with_token(
+                                                    next_token,
+                                                    format!(
                                                         "Expected colon after parameter name. Instead, found: {:?}",
                                                         next_token
-                                                    )
-                                                });
+                                                    ),
+                                                ));
                                             }
                                         }
                                         None => {
@@ -160,14 +165,13 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                     tokens.next();
                                 }
                                 _ => {
-                                    return Err(ParseError {
-                                        line: next_token.line,
-                                        col: next_token.col,
-                                        message: format!(
+                                    return Err(ParseError::new_with_token(
+                                        next_token,
+                                        format!(
                                             "Expected parameter name or closing parenthesis after opening parenthesis. Instead, found: {:?}",
                                             next_token
-                                        )
-                                    });
+                                        ),
+                                    ));
                                 }
                             }
                         }
@@ -235,24 +239,22 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                                     Box::new(AstNode::Identifier(name2)),
                                                 ));
                                             } else {
-                                                return Err(ParseError {
-                                                    line: next_token.line,
-                                                    col: next_token.col,
-                                                    message: format!(
+                                                return Err(ParseError::new_with_token(
+                                                    next_token,
+                                                    format!(
                                                         "Expected identifier after addition (+). Instead, found: {:?}",
                                                         tokens.peek()
-                                                    )
-                                                });
+                                                    ),
+                                                ));
                                             }
                                         } else {
-                                            return Err(ParseError {
-                                                line: next_token.line,
-                                                col: next_token.col,
-                                                message: format!(
+                                            return Err(ParseError::new_with_token(
+                                                next_token,
+                                                format!(
                                                     "Expected addition (+) after identifier. Instead, found: {:?}",
                                                     tokens.peek()
-                                                )
-                                            });
+                                                ),
+                                            ));
                                         }
                                     }
                                     TokenType::LiteralInteger(value) => {
@@ -264,29 +266,29 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                 }
                             }
                         } else {
-                            return Err(ParseError {
-                                line: token.line,
-                                col: token.col,
-                                message: String::from(
-                                    "Expected opening brace after function parameters.",
+                            return Err(ParseError::new_with_token(
+                                identifier_token,
+                                format!(
+                                    "Expected opening brace after function parameters. Instead, found: {:?}",
+                                    tokens.peek()
                                 ),
-                            });
+                            ));
                         }
                     } else {
-                        return Err(ParseError {
-                            line: identifier_token.line,
-                            col: identifier_token.col,
-                            message: String::from("Expected opening parenthesis after function name. Instead, no opening parenthesis found.")
-                        });
+                        return Err(ParseError::new_with_token(
+                            identifier_token,
+                            String::from(
+                                "Expected opening parenthesis after function name. Instead, no opening parenthesis found."
+                            ),
+                        ));
                     }
                 } else {
-                    return Err(ParseError {
-                        line: token.line,
-                        col: token.col,
-                        message: format!(
+                    return Err(ParseError::new_with_token(
+                        token,
+                        format!(
                             "Expected function name after '{KEYWORD_FN}' keyword. Instead, no identifier for function name found."
-                        )
-                    });
+                        ),
+                    ));
                 }
             }
             TokenType::KeywordLet => {
@@ -345,11 +347,10 @@ fn parse_variable_definition<'a>(
                     tokens.next();
                     type_name
                 } else {
-                    return Err(ParseError {
-                        line: token.line,
-                        col: token.col,
-                        message: format!("Expected type after colon.",),
-                    });
+                    return Err(ParseError::new_with_token(
+                        token,
+                        format!("Expected type after colon.",),
+                    ));
                 };
 
                 if let Some(Token {
@@ -380,27 +381,22 @@ fn parse_variable_definition<'a>(
                                 Box::new(AstNode::LiteralInteger(*value)),
                             ));
                         } else {
-                            return Err(ParseError {
-                                line: token.line,
-                                col: token.col,
-                                message: format!(
-                                    "Expected statement end after variable definition.",
-                                ),
-                            });
+                            return Err(ParseError::new_with_token(
+                                token,
+                                format!("Expected statement end after variable definition.",),
+                            ));
                         }
                     } else {
-                        return Err(ParseError {
-                            line: token.line,
-                            col: token.col,
-                            message: format!("Expected integer literal after assignment operator."),
-                        });
+                        return Err(ParseError::new_with_token(
+                            token,
+                            format!("Expected integer literal after assignment operator.",),
+                        ));
                     }
                 } else {
-                    return Err(ParseError {
-                        line: token.line,
-                        col: token.col,
-                        message: format!("Expected assignment operator after variable name.",),
-                    });
+                    return Err(ParseError::new_with_token(
+                        token,
+                        format!("Expected assignment operator after variable name.",),
+                    ));
                 }
             }
             Some(Token {
@@ -427,36 +423,35 @@ fn parse_variable_definition<'a>(
                             Box::new(AstNode::LiteralInteger(*value)),
                         ));
                     } else {
-                        return Err(ParseError {
-                            line: token.line,
-                            col: token.col,
-                            message: format!("Expected statement end after variable definition."),
-                        });
+                        return Err(ParseError::new_with_token(
+                            token,
+                            format!("Expected statement end after variable definition.",),
+                        ));
                     }
                 } else {
-                    return Err(ParseError {
-                        line: token.line,
-                        col: token.col,
-                        message: format!("Expected integer literal after assignment operator."),
-                    });
+                    return Err(ParseError::new_with_token(
+                        token,
+                        format!("Expected integer literal after assignment operator.",),
+                    ));
                 }
             }
             _ => {
-                return Err(ParseError {
-                    line: token.line,
-                    col: token.col,
-                    message: format!("Expected assignment operator after variable name."),
-                });
+                return Err(ParseError::new_with_token(
+                    token,
+                    format!(
+                        "Expected type or assignment operator after variable name. Instead, found: {:?}",
+                        tokens.peek()
+                    ),
+                ));
             }
         }
     } else {
-        return Err(ParseError {
-            line: token.line,
-            col: token.col,
-            message: format!(
+        return Err(ParseError::new_with_token(
+            token,
+            format!(
                 "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
-            )
-        });
+            ),
+        ));
     }
 
     Ok((ast_nodes, tokens))
