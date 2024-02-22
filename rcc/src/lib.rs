@@ -319,7 +319,7 @@ fn parse_variable_definition<'a>(
     token: &Token<'_>,
     scope: &Scope,
 ) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
-    // Explicit type for vec here, because otherwisely attributes would have type &&str automatically decuded instead of &str.
+    // Explicit type for vec here, because otherwisely attributes would have type &&str automatically deduced instead of &str.
     let mut attributes = Vec::<&str>::new();
     let mut ast_nodes = vec![];
 
