@@ -36,14 +36,6 @@ pub struct ParseError {
 }
 impl ParseError {
     #[inline]
-    fn new_with_token(token: &Token, message: String) -> Self {
-        Self {
-            line: token.line,
-            col: token.col,
-            message,
-        }
-    }
-    #[inline]
     pub fn position(&self) -> String {
         format!("{}:{}", self.line, self.col)
     }
@@ -92,6 +84,23 @@ pub enum TokenType<'a> {
 
 type PeekableTokenIter<'a> = std::iter::Peekable<std::slice::Iter<'a, Token<'a>>>;
 
+/// Creates a parse error with the given token and message.
+/// It also includes source code file and line information for debugging purposes.
+macro_rules! create_parse_error {
+    ($token: expr, $message: expr) => {
+        ParseError {
+            line: $token.line,
+            col: $token.col,
+            message: $message
+                + &format!(
+                    "\nError in source code occured in \"{}:{}\"",
+                    file!(),
+                    line!()
+                ),
+        }
+    };
+}
+
 pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a>>, ParseError> {
     let mut tokens: PeekableTokenIter<'a> = tokens.iter().peekable();
 
@@ -128,12 +137,12 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                         expect_parameter_type = true;
                                         tokens.next();
                                     } else {
-                                        return Err(ParseError::new_with_token(
+                                        return Err(create_parse_error!(
                                             next_token,
                                             format!(
                                                 "Expected parameter name before colon. Instead, found: {:?}",
                                                 next_token
-                                            ),
+                                            )
                                         ));
                                     }
                                 }
@@ -154,12 +163,12 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                                 });
                                                 parameter_name_token = None;
                                             } else {
-                                                return Err(ParseError::new_with_token(
+                                                return Err(create_parse_error!(
                                                     next_token,
                                                     format!(
                                                         "Expected colon after parameter name. Instead, found: {:?}",
                                                         next_token
-                                                    ),
+                                                    )
                                                 ));
                                             }
                                         }
@@ -171,12 +180,12 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                     tokens.next();
                                 }
                                 _ => {
-                                    return Err(ParseError::new_with_token(
+                                    return Err(create_parse_error!(
                                         next_token,
                                         format!(
                                             "Expected parameter name or closing parenthesis after opening parenthesis. Instead, found: {:?}",
                                             next_token
-                                        ),
+                                        )
                                     ));
                                 }
                             }
@@ -245,21 +254,21 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                                     Box::new(AstNode::Identifier(name2)),
                                                 ));
                                             } else {
-                                                return Err(ParseError::new_with_token(
+                                                return Err(create_parse_error!(
                                                     next_token,
                                                     format!(
                                                         "Expected identifier after addition (+). Instead, found: {:?}",
                                                         tokens.peek()
-                                                    ),
+                                                    )
                                                 ));
                                             }
                                         } else {
-                                            return Err(ParseError::new_with_token(
+                                            return Err(create_parse_error!(
                                                 next_token,
                                                 format!(
                                                     "Expected addition (+) after identifier. Instead, found: {:?}",
                                                     tokens.peek()
-                                                ),
+                                                )
                                             ));
                                         }
                                     }
@@ -272,28 +281,28 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                 }
                             }
                         } else {
-                            return Err(ParseError::new_with_token(
+                            return Err(create_parse_error!(
                                 identifier_token,
                                 format!(
                                     "Expected opening brace after function parameters. Instead, found: {:?}",
                                     tokens.peek()
-                                ),
+                                )
                             ));
                         }
                     } else {
-                        return Err(ParseError::new_with_token(
+                        return Err(create_parse_error!(
                             identifier_token,
                             String::from(
                                 "Expected opening parenthesis after function name. Instead, no opening parenthesis found."
-                            ),
+                            )
                         ));
                     }
                 } else {
-                    return Err(ParseError::new_with_token(
+                    return Err(create_parse_error!(
                         token,
                         format!(
                             "Expected function name after '{KEYWORD_FN}' keyword. Instead, no identifier for function name found."
-                        ),
+                        )
                     ));
                 }
             }
@@ -343,11 +352,11 @@ fn parse_variable_definition<'a>(
 
                 // Ensure that static variables are only allowed in the global scope.
                 if *scope != Scope::Global && attributes.contains(&"static") {
-                    return Err(ParseError::new_with_token(
+                    return Err(create_parse_error!(
                         token,
                         format!(
                             "Static variables are only allowed in the global scope, not in this scope."
-                        ),
+                        )
                     ));
                 }
 
@@ -374,9 +383,9 @@ fn parse_variable_definition<'a>(
                             tokens.next();
                             type_name
                         } else {
-                            return Err(ParseError::new_with_token(
+                            return Err(create_parse_error!(
                                 token,
-                                format!("Expected type after colon.",),
+                                format!("Expected type after colon.",)
                             ));
                         };
 
@@ -409,23 +418,23 @@ fn parse_variable_definition<'a>(
                                         Box::new(AstNode::LiteralInteger(*value)),
                                     ));
                                 } else {
-                                    return Err(ParseError::new_with_token(
+                                    return Err(create_parse_error!(
                                         token,
                                         format!(
                                             "Expected statement end after variable definition.",
-                                        ),
+                                        )
                                     ));
                                 }
                             } else {
-                                return Err(ParseError::new_with_token(
+                                return Err(create_parse_error!(
                                     token,
-                                    format!("Expected integer literal after assignment operator.",),
+                                    format!("Expected integer literal after assignment operator.",)
                                 ));
                             }
                         } else {
-                            return Err(ParseError::new_with_token(
+                            return Err(create_parse_error!(
                                 token,
-                                format!("Expected assignment operator after variable name.",),
+                                format!("Expected assignment operator after variable name.",)
                             ));
                         }
                     }
@@ -456,25 +465,25 @@ fn parse_variable_definition<'a>(
                                     Box::new(AstNode::LiteralInteger(*value)),
                                 ));
                             } else {
-                                return Err(ParseError::new_with_token(
+                                return Err(create_parse_error!(
                                     token,
-                                    format!("Expected statement end after variable definition.",),
+                                    format!("Expected statement end after variable definition.",)
                                 ));
                             }
                         } else {
-                            return Err(ParseError::new_with_token(
+                            return Err(create_parse_error!(
                                 token,
-                                format!("Expected integer literal after assignment operator.",),
+                                format!("Expected integer literal after assignment operator.",)
                             ));
                         }
                     }
                     _ => {
-                        return Err(ParseError::new_with_token(
+                        return Err(create_parse_error!(
                             token,
                             format!(
                                 "Expected type or assignment operator after variable name. Instead, found: {:?}",
                                 tokens.peek()
-                            ),
+                            )
                         ));
                     }
                 }
@@ -482,11 +491,11 @@ fn parse_variable_definition<'a>(
                 break;
             }
             _ => {
-                return Err(ParseError::new_with_token(
+                return Err(create_parse_error!(
                     token,
                     format!(
                         "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
-                    ),
+                    )
                 ));
             }
         }
