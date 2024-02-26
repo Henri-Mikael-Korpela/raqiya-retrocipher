@@ -740,38 +740,29 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                         }
                     }
 
+                    macro_rules! push_keyword_token {
+                        ($keyword: ident, $type: expr) => {{
+                            tokens.push(Token {
+                                col: current_col,
+                                line: current_line,
+                                type_: $type,
+                            });
+                            current_col += $keyword.len();
+                        }};
+                    }
+
                     match &code[i..identifier_or_keyword_index_end] {
                         KEYWORD_FN => {
-                            tokens.push(Token {
-                                col: current_col,
-                                line: current_line,
-                                type_: TokenType::KeywordFn,
-                            });
-                            current_col += KEYWORD_FN.len();
+                            push_keyword_token!(KEYWORD_FN, TokenType::KeywordFn)
                         }
                         KEYWORD_LET => {
-                            tokens.push(Token {
-                                col: current_col,
-                                line: current_line,
-                                type_: TokenType::KeywordLet,
-                            });
-                            current_col += KEYWORD_LET.len();
+                            push_keyword_token!(KEYWORD_LET, TokenType::KeywordLet)
                         }
                         KEYWORD_TRUE => {
-                            tokens.push(Token {
-                                col: current_col,
-                                line: current_line,
-                                type_: TokenType::LiteralBooleanTrue,
-                            });
-                            current_col += KEYWORD_TRUE.len();
+                            push_keyword_token!(KEYWORD_TRUE, TokenType::LiteralBooleanTrue)
                         }
                         KEYWORD_FALSE => {
-                            tokens.push(Token {
-                                col: current_col,
-                                line: current_line,
-                                type_: TokenType::LiteralBooleanFalse,
-                            });
-                            current_col += KEYWORD_FALSE.len();
+                            push_keyword_token!(KEYWORD_FALSE, TokenType::LiteralBooleanFalse)
                         }
                         _ => {
                             let identifier = &code[i..identifier_or_keyword_index_end];
