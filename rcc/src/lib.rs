@@ -520,6 +520,16 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
     let mut current_line = 1usize;
     let mut tokens = vec![];
 
+    macro_rules! push_token_with_pos {
+        ($type: expr) => {{
+            tokens.push(Token {
+                col: current_col,
+                line: current_line,
+                type_: $type,
+            });
+        }};
+    }
+
     while let Some((i, c)) = chars.next() {
         match c {
             '}' => {
@@ -527,113 +537,62 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                     return Err("Unexpected closing brace. There are too many closing braces compared to opening braces.".into());
                 }
                 brace_level -= 1;
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::DelimiterBraceClose { level: brace_level },
-                });
+                push_token_with_pos!(TokenType::DelimiterBraceClose { level: brace_level });
                 current_col += 1;
             }
             '{' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::DelimiterBraceOpen { level: brace_level },
-                });
+                push_token_with_pos!(TokenType::DelimiterBraceOpen { level: brace_level });
                 brace_level += 1;
                 current_col += 1;
             }
             ':' => {
                 current_col += 1;
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::DelimiterColon,
-                });
+                push_token_with_pos!(TokenType::DelimiterColon);
             }
             ',' => {
                 current_col += 1;
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::DelimiterComma,
-                });
+                push_token_with_pos!(TokenType::DelimiterComma);
             }
             ')' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::DelimiterParenthesisClose,
-                });
+                push_token_with_pos!(TokenType::DelimiterParenthesisClose);
                 current_col += 1;
             }
             '(' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::DelimiterParenthesisOpen,
-                });
+                push_token_with_pos!(TokenType::DelimiterParenthesisOpen);
                 current_col += 1;
             }
             '=' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::OperatorAssignment,
-                });
+                push_token_with_pos!(TokenType::OperatorAssignment);
                 current_col += 1;
             }
             '+' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::OperatorAddition,
-                });
+                push_token_with_pos!(TokenType::OperatorAddition);
                 current_col += 1;
             }
             '/' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::OperatorDivision,
-                });
+                push_token_with_pos!(TokenType::OperatorDivision);
                 current_col += 1;
             }
             '*' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::OperatorMultiplication,
-                });
+                push_token_with_pos!(TokenType::OperatorMultiplication);
                 current_col += 1;
             }
             '-' => {
                 if let Some((_, '>')) = chars.peek() {
                     chars.next();
-                    tokens.push(Token {
-                        col: current_col,
-                        line: current_line,
-                        type_: TokenType::OperatorArrow,
-                    });
+                    push_token_with_pos!(TokenType::OperatorArrow);
                     current_col += 2;
                 } else {
-                    tokens.push(Token {
-                        col: current_col,
-                        line: current_line,
-                        type_: TokenType::OperatorSubtraction,
-                    });
+                    push_token_with_pos!(TokenType::OperatorSubtraction);
                     current_col += 1;
                 }
             }
             ';' => {
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::OperatorStatementEnd,
-                });
+                push_token_with_pos!(TokenType::OperatorStatementEnd);
                 current_col += 1;
             }
             ' ' => {
+                // Whitespace characters are not stored as tokens.
                 current_col += 1;
             }
             '\n' => {
@@ -666,11 +625,7 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                 }
 
                 let attribute = &code[attribute_index_begin..attribute_index_end];
-                tokens.push(Token {
-                    col: current_col,
-                    line: current_line,
-                    type_: TokenType::Attribute(attribute),
-                });
+                push_token_with_pos!(TokenType::Attribute(attribute));
                 current_col += attribute_index_end - attribute_index_begin + 1; // + 1 for the '#' character.
             }
             _ => {
@@ -721,11 +676,7 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                         }
                     };
 
-                    tokens.push(Token {
-                        col: current_col,
-                        line: current_line,
-                        type_: TokenType::LiteralInteger(value),
-                    });
+                    push_token_with_pos!(TokenType::LiteralInteger(value));
                     current_col += value_index_end - i;
                 } else if c.is_alphabetic() || c == '_' {
                     // In this state, we expect an identifier or a keyword.
@@ -740,37 +691,35 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                         }
                     }
 
-                    macro_rules! push_keyword_token {
+                    macro_rules! push_keyword_token_with_pos {
                         ($keyword: ident, $type: expr) => {{
-                            tokens.push(Token {
-                                col: current_col,
-                                line: current_line,
-                                type_: $type,
-                            });
+                            push_token_with_pos!($type);
                             current_col += $keyword.len();
                         }};
                     }
 
                     match &code[i..identifier_or_keyword_index_end] {
                         KEYWORD_FN => {
-                            push_keyword_token!(KEYWORD_FN, TokenType::KeywordFn)
+                            push_keyword_token_with_pos!(KEYWORD_FN, TokenType::KeywordFn)
                         }
                         KEYWORD_LET => {
-                            push_keyword_token!(KEYWORD_LET, TokenType::KeywordLet)
+                            push_keyword_token_with_pos!(KEYWORD_LET, TokenType::KeywordLet)
                         }
                         KEYWORD_TRUE => {
-                            push_keyword_token!(KEYWORD_TRUE, TokenType::LiteralBooleanTrue)
+                            push_keyword_token_with_pos!(
+                                KEYWORD_TRUE,
+                                TokenType::LiteralBooleanTrue
+                            )
                         }
                         KEYWORD_FALSE => {
-                            push_keyword_token!(KEYWORD_FALSE, TokenType::LiteralBooleanFalse)
+                            push_keyword_token_with_pos!(
+                                KEYWORD_FALSE,
+                                TokenType::LiteralBooleanFalse
+                            )
                         }
                         _ => {
                             let identifier = &code[i..identifier_or_keyword_index_end];
-                            tokens.push(Token {
-                                col: current_col,
-                                line: current_line,
-                                type_: TokenType::Identifier(identifier),
-                            });
+                            push_token_with_pos!(TokenType::Identifier(identifier));
                             current_col += identifier_or_keyword_index_end - i;
                         }
                     }
