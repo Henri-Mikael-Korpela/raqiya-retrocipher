@@ -70,7 +70,7 @@ fn run() -> Result<(), String> {
             ));
         }
     } else {
-        println!("{:?}", ast_nodes);
+        println!("{:#?}", ast_nodes);
     }
 
     Ok(())
