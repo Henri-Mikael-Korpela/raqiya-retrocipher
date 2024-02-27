@@ -679,7 +679,7 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                 current_line += 1;
             }
             '#' => {
-                // Skip this character, because it is not stored at part of the attribute token.
+                // Skip this character, because it is not stored as part of the attribute token.
                 chars.next();
 
                 let attribute_index_begin = i + 1;
@@ -708,7 +708,7 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                 current_col += attribute_index_end - attribute_index_begin + 1; // + 1 for the '#' character.
             }
             '"' => {
-                // Skip this character, because it is not stored at part of the string literal token.
+                // Skip this character, because it is not stored as part of the string literal token.
                 chars.next();
 
                 let mut string_literal_index_end = i;
