@@ -384,6 +384,25 @@ mod tests {
         );
     }
     #[test]
+    fn tokenize_literals_string() {
+        let code = "\"Hello, World!\"";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![token_new!(TokenType::LiteralString("Hello, World!"), 1, 0),]
+        );
+
+        let code = "\"example\" \"Hello, World!\"";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                token_new!(TokenType::LiteralString("example"), 1, 0),
+                token_new!(TokenType::LiteralString("Hello, World!"), 1, 10),
+            ]
+        );
+    }
+    #[test]
     fn tokenize_operators_arithmetic() {
         // All together
         let code = "+-*/";

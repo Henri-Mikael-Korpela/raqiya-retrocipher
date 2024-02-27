@@ -82,6 +82,7 @@ pub enum TokenType<'a> {
     LiteralBooleanFalse,
     LiteralBooleanTrue,
     LiteralInteger(i64),
+    LiteralString(&'a str),
     KeywordFn,
     KeywordLet,
     OperatorArrow,
@@ -705,6 +706,23 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                 let attribute = &code[attribute_index_begin..attribute_index_end];
                 push_token_with_pos!(TokenType::Attribute(attribute));
                 current_col += attribute_index_end - attribute_index_begin + 1; // + 1 for the '#' character.
+            }
+            '"' => {
+                // Skip this character, because it is not stored at part of the string literal token.
+                chars.next();
+
+                let mut string_literal_index_end = i;
+
+                while let Some((j, next_c)) = chars.next() {
+                    if next_c == '"' {
+                        string_literal_index_end = j;
+                        break;
+                    }
+                }
+
+                let value = &code[i + 1..string_literal_index_end];
+                push_token_with_pos!(TokenType::LiteralString(value));
+                current_col += string_literal_index_end - i + 1; // + 1 for the '"' character.
             }
             _ => {
                 if c.is_digit(10) {
