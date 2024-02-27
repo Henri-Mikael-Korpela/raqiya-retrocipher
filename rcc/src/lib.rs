@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AstNode<'a> {
     Addition(Box<AstNode<'a>>, Box<AstNode<'a>>),
     FunctionDefinition {
@@ -11,19 +11,30 @@ pub enum AstNode<'a> {
     ReturnStatement(Box<AstNode<'a>>),
     VariableDefinition(AstNodeVariableIdentifier<'a>, Box<AstNode<'a>>),
 }
-#[derive(Debug, PartialEq)]
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AstNodeAttribute<'a> {
+    Callable {
+        name: &'a str,
+        arguments: Vec<AstNode<'a>>,
+    },
+    Value(&'a str),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct AstNodeFunctionParameter<'a> {
     name: &'a str,
 }
-#[derive(Debug, PartialEq)]
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum AstNodeVariableIdentifier<'a> {
     WithType {
-        attributes: Vec<&'a str>,
+        attributes: Vec<AstNodeAttribute<'a>>,
         identifier_name: &'a str,
         type_name: &'a str,
     },
     WithoutType {
-        attributes: Vec<&'a str>,
+        attributes: Vec<AstNodeAttribute<'a>>,
         identifier_name: &'a str,
     },
 }
@@ -328,9 +339,8 @@ fn parse_variable_definition<'a>(
     token: &Token<'_>,
     scope: &Scope,
 ) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
-    // Explicit type for vec here, because otherwise attributes would have type &&str automatically deduced instead of &str.
-    let mut attributes = Vec::<&str>::new();
-    let mut ast_nodes = vec![];
+    let mut attributes: Vec<AstNodeAttribute<'_>> = vec![];
+    let mut ast_nodes: Vec<AstNode<'_>> = vec![];
 
     'variable_defition_parsing_loop: loop {
         match tokens.peek() {
@@ -338,20 +348,89 @@ fn parse_variable_definition<'a>(
                 type_: TokenType::Attribute(name),
                 ..
             }) => {
+                // In this state, expect more than one attribute to follow.
                 tokens.next();
-                attributes.push(name);
 
-                while let Some(Token {
-                    type_: TokenType::Attribute(name),
-                    ..
-                }) = tokens.peek()
+                let mut callable_attribute_args: Vec<AstNode<'_>> = vec![];
+                let mut current_attribute_name: &str = name;
+                let mut parsing_callable_attribute_args = false;
+
+                while let Some(token) = tokens.peek() {
+                    match token.type_ {
+                        // If encountered another attribute
+                        TokenType::Attribute(name) => {
+                            // If still parsing callable attribute arguments, then it is an error.
+                            if parsing_callable_attribute_args {
+                                return Err(create_parse_error!(
+                                    token,
+                                    format!("Unexpected attribute after a parenthesis to begin callable attribute arguments.")
+                                ));
+                            }
+
+                            tokens.next();
+
+                            if callable_attribute_args.iter().count() > 0 {
+                                attributes.push(AstNodeAttribute::Callable {
+                                    name: current_attribute_name,
+                                    arguments: callable_attribute_args,
+                                });
+                                callable_attribute_args = vec![];
+                            } else {
+                                attributes.push(AstNodeAttribute::Value(current_attribute_name));
+                            }
+
+                            current_attribute_name = name;
+                        }
+                        // If encountered an end token for callable attribute arguments
+                        TokenType::DelimiterParenthesisClose => {
+                            if parsing_callable_attribute_args {
+                                tokens.next();
+
+                                attributes.push(AstNodeAttribute::Callable {
+                                    name: current_attribute_name,
+                                    arguments: callable_attribute_args.clone(),
+                                });
+                            } else {
+                                return Err(create_parse_error!(
+                                    token,
+                                    format!("Unepected closing parenthesis")
+                                ));
+                            }
+                        }
+                        // If encountered a begin token for callable attribute arguments
+                        TokenType::DelimiterParenthesisOpen => {
+                            tokens.next();
+
+                            parsing_callable_attribute_args = true;
+                        }
+                        TokenType::LiteralInteger(value) => {
+                            if parsing_callable_attribute_args {
+                                tokens.next();
+
+                                callable_attribute_args.push(AstNode::LiteralInteger(value));
+                            } else {
+                                return Err(create_parse_error!(
+                                    token,
+                                    format!("Unexpected integer literal outside callable attribute arguments.")
+                                ));
+                            }
+                        }
+                        _ => {
+                            break;
+                        }
+                    }
+                }
+
+                // This special case is for variable definitions with only one value attribute.
+                if *current_attribute_name == **name && callable_attribute_args.iter().count() == 0
                 {
-                    tokens.next();
-                    attributes.push(name);
+                    attributes.push(AstNodeAttribute::Value(current_attribute_name));
                 }
 
                 // Ensure that static variables are only allowed in the global scope.
-                if *scope != Scope::Global && attributes.contains(&"static") {
+                if attributes.contains(&AstNodeAttribute::Value("static"))
+                    && *scope != Scope::Global
+                {
                     return Err(create_parse_error!(
                         token,
                         format!(

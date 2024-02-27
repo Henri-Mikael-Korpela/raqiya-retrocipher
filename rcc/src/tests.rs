@@ -21,35 +21,6 @@ mod tests {
     }
 
     #[test]
-    fn tokenize_literals_integers_as_hexadecimal() {
-        let code = "0x5 0xA 0xC8 0x3E8"; // 5 10 200 1000 in decimal.
-        let tokens = tokenize(code).unwrap();
-        assert_eq!(
-            tokens,
-            vec![
-                token_new!(TokenType::LiteralInteger(5), 1, 0),
-                token_new!(TokenType::LiteralInteger(10), 1, 4),
-                token_new!(TokenType::LiteralInteger(200), 1, 8),
-                token_new!(TokenType::LiteralInteger(1000), 1, 13),
-            ]
-        );
-    }
-    #[test]
-    fn tokenize_literals_integers_as_decimal() {
-        let code = "5 10 200 1000";
-        let tokens = tokenize(code).unwrap();
-        assert_eq!(
-            tokens,
-            vec![
-                token_new!(TokenType::LiteralInteger(5), 1, 0),
-                token_new!(TokenType::LiteralInteger(10), 1, 2),
-                token_new!(TokenType::LiteralInteger(200), 1, 5),
-                token_new!(TokenType::LiteralInteger(1000), 1, 9),
-            ]
-        );
-    }
-
-    #[test]
     fn parse_function_definition_without_parameters_and_empty_body() {
         let tokens = vec![
             token_new!(TokenType::KeywordFn),
@@ -186,7 +157,38 @@ mod tests {
         );
     }
     #[test]
-    fn parse_variable_definition_with_attributes() {
+    fn parse_variable_definition_with_callable_attribute() {
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Attribute("virtual_mem_addr")),
+            token_new!(TokenType::DelimiterParenthesisOpen),
+            token_new!(TokenType::LiteralInteger(0x80010000)),
+            token_new!(TokenType::DelimiterParenthesisClose),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("I32")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralInteger(5)),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![AstNodeAttribute::Callable {
+                        name: "virtual_mem_addr",
+                        arguments: vec![AstNode::LiteralInteger(0x80010000)]
+                    }],
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
+                Box::new(AstNode::LiteralInteger(5))
+            )]
+        );
+    }
+    #[test]
+    fn parse_variable_definition_with_value_attribute() {
         let tokens = vec![
             token_new!(TokenType::KeywordLet),
             token_new!(TokenType::Attribute("static")),
@@ -202,7 +204,7 @@ mod tests {
             ast_nodes,
             vec![AstNode::VariableDefinition(
                 AstNodeVariableIdentifier::WithType {
-                    attributes: vec!["static"],
+                    attributes: vec![AstNodeAttribute::Value("static")],
                     identifier_name: "x",
                     type_name: "I32"
                 },
@@ -315,6 +317,34 @@ mod tests {
             vec![
                 token_new!(TokenType::LiteralBooleanTrue, 1, 0),
                 token_new!(TokenType::LiteralBooleanFalse, 1, 5),
+            ]
+        );
+    }
+    #[test]
+    fn tokenize_literals_integers_as_decimal() {
+        let code = "5 10 200 1000";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                token_new!(TokenType::LiteralInteger(5), 1, 0),
+                token_new!(TokenType::LiteralInteger(10), 1, 2),
+                token_new!(TokenType::LiteralInteger(200), 1, 5),
+                token_new!(TokenType::LiteralInteger(1000), 1, 9),
+            ]
+        );
+    }
+    #[test]
+    fn tokenize_literals_integers_as_hexadecimal() {
+        let code = "0x5 0xA 0xC8 0x3E8"; // 5 10 200 1000 in decimal.
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                token_new!(TokenType::LiteralInteger(5), 1, 0),
+                token_new!(TokenType::LiteralInteger(10), 1, 4),
+                token_new!(TokenType::LiteralInteger(200), 1, 8),
+                token_new!(TokenType::LiteralInteger(1000), 1, 13),
             ]
         );
     }
