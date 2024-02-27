@@ -34,6 +34,7 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
+                attributes: vec![],
                 name: "main",
                 parameters: vec![],
                 body: vec![]
@@ -57,6 +58,7 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
+                attributes: vec![],
                 name: "main",
                 parameters: vec![],
                 body: vec![AstNode::ReturnStatement(Box::new(AstNode::LiteralInteger(
@@ -91,6 +93,7 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
+                attributes: vec![],
                 name: "main",
                 parameters: vec![
                     AstNodeFunctionParameter { name: "x" },
@@ -120,6 +123,7 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
+                attributes: vec![],
                 name: "main",
                 parameters: vec![AstNodeFunctionParameter { name: "x" }],
                 body: vec![]
@@ -147,6 +151,7 @@ mod tests {
         assert_eq!(
             ast_nodes,
             vec![AstNode::FunctionDefinition {
+                attributes: vec![],
                 name: "main",
                 parameters: vec![
                     AstNodeFunctionParameter { name: "x" },
