@@ -8,6 +8,7 @@ pub enum AstNode<'a> {
     },
     Identifier(&'a str),
     LiteralInteger(i64),
+    LiteralString(&'a str),
     ReturnStatement(Box<AstNode<'a>>),
     VariableDefinition(AstNodeVariableIdentifier<'a>, Box<AstNode<'a>>),
 }
@@ -468,52 +469,67 @@ fn parse_variable_definition<'a>(
                             ));
                         };
 
+                        let assignment_token = match tokens.next() {
+                            Some(token) => {
+                                if (matches!(token.type_, TokenType::OperatorAssignment)) {
+                                    token
+                                } else {
+                                    return Err(create_parse_error!(
+                                        token,
+                                        format!(
+                                            "Expected assignment operator after variable name."
+                                        )
+                                    ));
+                                }
+                            }
+                            _ => {
+                                return Err(create_parse_error!(
+                                    token,
+                                    format!("Expected a token after the variable type name.")
+                                ));
+                            }
+                        };
+
+                        let value = match tokens.next() {
+                            Some(token) => match token.type_ {
+                                TokenType::LiteralInteger(value) => AstNode::LiteralInteger(value),
+                                TokenType::LiteralString(value) => AstNode::LiteralString(value),
+                                _ => {
+                                    return Err(create_parse_error!(
+                                        token,
+                                        format!(
+                                            "Expected integer or string literal after assignment operator."
+                                        )
+                                    ));
+                                }
+                            },
+                            _ => {
+                                return Err(create_parse_error!(
+                                    assignment_token,
+                                    format!("Expected a token after the assignment operator.")
+                                ));
+                            }
+                        };
+
                         if let Some(Token {
-                            type_: TokenType::OperatorAssignment,
+                            type_: TokenType::OperatorStatementEnd,
                             ..
                         }) = tokens.peek()
                         {
                             tokens.next();
 
-                            if let Some(Token {
-                                type_: TokenType::LiteralInteger(value),
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-
-                                if let Some(Token {
-                                    type_: TokenType::OperatorStatementEnd,
-                                    ..
-                                }) = tokens.peek()
-                                {
-                                    tokens.next();
-                                    ast_nodes.push(AstNode::VariableDefinition(
-                                        AstNodeVariableIdentifier::WithType {
-                                            attributes,
-                                            identifier_name: name,
-                                            type_name: variable_type_name,
-                                        },
-                                        Box::new(AstNode::LiteralInteger(*value)),
-                                    ));
-                                } else {
-                                    return Err(create_parse_error!(
-                                        token,
-                                        format!(
-                                            "Expected statement end after variable definition.",
-                                        )
-                                    ));
-                                }
-                            } else {
-                                return Err(create_parse_error!(
-                                    token,
-                                    format!("Expected integer literal after assignment operator.",)
-                                ));
-                            }
+                            ast_nodes.push(AstNode::VariableDefinition(
+                                AstNodeVariableIdentifier::WithType {
+                                    attributes,
+                                    identifier_name: name,
+                                    type_name: variable_type_name,
+                                },
+                                Box::new(value),
+                            ));
                         } else {
                             return Err(create_parse_error!(
                                 token,
-                                format!("Expected assignment operator after variable name.",)
+                                format!("Expected statement end after variable definition.")
                             ));
                         }
                     }

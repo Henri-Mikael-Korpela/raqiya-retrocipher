@@ -292,6 +292,30 @@ mod tests {
             )]
         );
     }
+    #[test]
+    fn parse_variable_definition_with_type_and_with_string_literal() {
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("Str")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralString("Hello, World!")),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![],
+                    identifier_name: "x",
+                    type_name: "Str"
+                },
+                Box::new(AstNode::LiteralString("Hello, World!"))
+            )]
+        );
+    }
 
     #[test]
     fn tokenize_attribute() {
