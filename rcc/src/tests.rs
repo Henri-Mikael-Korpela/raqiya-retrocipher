@@ -213,6 +213,41 @@ mod tests {
         );
     }
     #[test]
+    fn parse_variable_definition_with_many_attributes() {
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Attribute("static")),
+            token_new!(TokenType::Attribute("virtual_mem_addr")),
+            token_new!(TokenType::DelimiterParenthesisOpen),
+            token_new!(TokenType::LiteralInteger(0x80010000)),
+            token_new!(TokenType::DelimiterParenthesisClose),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("I32")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralInteger(5)),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![
+                        AstNodeAttribute::Value("static"),
+                        AstNodeAttribute::Callable {
+                            name: "virtual_mem_addr",
+                            arguments: vec![AstNode::LiteralInteger(0x80010000)]
+                        }
+                    ],
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
+                Box::new(AstNode::LiteralInteger(5))
+            )]
+        );
+    }
+    #[test]
     fn parse_variable_definition_with_automatic_type_deduction_and_with_integer_literal() {
         let tokens = vec![
             token_new!(TokenType::KeywordLet),

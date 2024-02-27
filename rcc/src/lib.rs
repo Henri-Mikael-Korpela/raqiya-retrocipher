@@ -422,8 +422,7 @@ fn parse_variable_definition<'a>(
                 }
 
                 // This special case is for variable definitions with only one value attribute.
-                if *current_attribute_name == **name && callable_attribute_args.iter().count() == 0
-                {
+                if *current_attribute_name == **name && callable_attribute_args.len() == 0 {
                     attributes.push(AstNodeAttribute::Value(current_attribute_name));
                 }
 
