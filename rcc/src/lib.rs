@@ -439,6 +439,39 @@ fn parse_attributes<'a>(
 
     Ok((attributes, tokens))
 }
+fn parse_expression_until_token<'a>(
+    mut tokens: PeekableTokenIter<'a>,
+    prev_token: &Token<'_>,
+    end_token_type: TokenType<'_>,
+    error_on_next_token_missing: String,
+) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError> {
+    let node = match tokens.next() {
+        Some(token) => match token.type_ {
+            TokenType::LiteralInteger(value) => AstNode::LiteralInteger(value),
+            TokenType::LiteralString(value) => AstNode::LiteralString(value),
+            _ => {
+                return Err(create_parse_error!(
+                    token,
+                    format!("Expected integer or string literal after assignment operator. Instead, got {:?}", token.type_)
+                ));
+            }
+        },
+        _ => {
+            return Err(create_parse_error!(prev_token, error_on_next_token_missing));
+        }
+    };
+
+    if let Some(Token { type_, .. }) = tokens.next() {
+        if *type_ == end_token_type {
+            return Ok((node, tokens));
+        }
+    }
+
+    Err(create_parse_error!(
+        prev_token,
+        format!("Expected {:?} to end an expression.", end_token_type)
+    ))
+}
 fn parse_variable_definition<'a>(
     mut tokens: PeekableTokenIter<'a>,
     token: &Token<'_>,
@@ -528,48 +561,29 @@ fn parse_variable_definition<'a>(
                             }
                         };
 
-                        let value = match tokens.next() {
-                            Some(token) => match token.type_ {
-                                TokenType::LiteralInteger(value) => AstNode::LiteralInteger(value),
-                                TokenType::LiteralString(value) => AstNode::LiteralString(value),
-                                _ => {
-                                    return Err(create_parse_error!(
-                                        token,
-                                        format!(
-                                            "Expected integer or string literal after assignment operator."
-                                        )
-                                    ));
-                                }
-                            },
-                            _ => {
-                                return Err(create_parse_error!(
-                                    assignment_token,
-                                    format!("Expected a token after the assignment operator.")
-                                ));
+                        let value = match parse_expression_until_token(
+                            tokens.clone(),
+                            &assignment_token,
+                            TokenType::OperatorStatementEnd,
+                            format!("Expected a token after the assignment operator."),
+                        ) {
+                            Ok((value, new_tokens)) => {
+                                tokens = new_tokens;
+                                value
+                            }
+                            Err(parse_error) => {
+                                return Err(parse_error);
                             }
                         };
 
-                        if let Some(Token {
-                            type_: TokenType::OperatorStatementEnd,
-                            ..
-                        }) = tokens.peek()
-                        {
-                            tokens.next();
-
-                            ast_nodes.push(AstNode::VariableDefinition(
-                                AstNodeVariableIdentifier::WithType {
-                                    attributes,
-                                    identifier_name: name,
-                                    type_name: variable_type_name,
-                                },
-                                Box::new(value),
-                            ));
-                        } else {
-                            return Err(create_parse_error!(
-                                token,
-                                format!("Expected statement end after variable definition.")
-                            ));
-                        }
+                        ast_nodes.push(AstNode::VariableDefinition(
+                            AstNodeVariableIdentifier::WithType {
+                                attributes,
+                                identifier_name: name,
+                                type_name: variable_type_name,
+                            },
+                            Box::new(value),
+                        ));
                     }
                     Some(Token {
                         type_: TokenType::OperatorAssignment,
