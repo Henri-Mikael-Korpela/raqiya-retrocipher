@@ -506,22 +506,17 @@ fn parse_expression_until_token<'a>(
     // There should be only one unit left, which is the root node of the expression.
     assert_eq!(units.len(), 1);
 
-    fn parse_ast_node_from_unit<'a>(unit: &Unit<'a>) -> Result<AstNode<'a>, ParseError> {
-        match unit {
-            Unit::Node(node) => Ok(*node.clone()),
-            Unit::Value(value) => Ok(value.clone()),
-            _ => Err(create_parse_error!(
-                Token {
-                    col: 0,
-                    line: 0,
-                    type_: TokenType::Attribute(""),
-                },
-                format!("Expected node or value unit.")
-            )),
+    let ast_node = match &units[0] {
+        Unit::Node(node) => Ok(*node.clone()),
+        Unit::Value(value) => Ok(value.clone()),
+        _ => {
+            // Should never happen, but it is here to satisfy the compiler and ensure all cases are handled.
+            panic!(
+                "Expected node or value unit. Instead, found: {:?}",
+                units[0]
+            );
         }
-    }
-
-    let ast_node = parse_ast_node_from_unit(&units[0].clone())?;
+    }?;
 
     Ok((ast_node, tokens))
 }
