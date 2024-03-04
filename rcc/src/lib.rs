@@ -1,6 +1,7 @@
 #[derive(Clone, Debug, PartialEq)]
 pub enum AstNode<'a> {
     Addition(Box<AstNode<'a>>, Box<AstNode<'a>>),
+    Division(Box<AstNode<'a>>, Box<AstNode<'a>>),
     FunctionDefinition {
         attributes: Vec<AstNodeAttribute<'a>>,
         name: &'a str,
@@ -12,6 +13,7 @@ pub enum AstNode<'a> {
     LiteralString(&'a str),
     Multiplication(Box<AstNode<'a>>, Box<AstNode<'a>>),
     ReturnStatement(Box<AstNode<'a>>),
+    Substraction(Box<AstNode<'a>>, Box<AstNode<'a>>),
     VariableDefinition(AstNodeVariableIdentifier<'a>, Box<AstNode<'a>>),
 }
 
@@ -93,7 +95,7 @@ pub enum TokenType<'a> {
     OperatorAddition,
     OperatorDivision,
     OperatorMultiplication,
-    OperatorSubtraction,
+    OperatorSubstraction,
     OperatorStatementEnd,
 }
 
@@ -380,7 +382,7 @@ fn parse_attributes<'a>(
     Ok((attributes, tokens))
 }
 
-fn parse_expression_until_token<'a>(
+fn parse_expression_until_token_type<'a>(
     mut tokens: PeekableTokenIter<'a>,
     prev_token: &Token<'_>,
     end_token_type: TokenType<'_>,
@@ -409,8 +411,14 @@ fn parse_expression_until_token<'a>(
             TokenType::OperatorAddition => {
                 units.push(Unit::Operator(TokenType::OperatorAddition));
             }
+            TokenType::OperatorDivision => {
+                units.push(Unit::Operator(TokenType::OperatorDivision));
+            }
             TokenType::OperatorMultiplication => {
                 units.push(Unit::Operator(TokenType::OperatorMultiplication));
+            }
+            TokenType::OperatorSubstraction => {
+                units.push(Unit::Operator(TokenType::OperatorSubstraction));
             }
             _ => {
                 if token.type_ == end_token_type {
@@ -425,43 +433,47 @@ fn parse_expression_until_token<'a>(
         }
     }
 
-    /// Parses a binary expression from the given units into AST nodes on the left and right side of the operator.
-    fn parse_binary_expression<'a>(
-        token: &Token<'_>,
-        units: &[Unit<'a>],
-    ) -> Result<(Box<AstNode<'a>>, Box<AstNode<'a>>), ParseError> {
-        let left = match units.get(0) {
-            Some(Unit::Node(node)) => node.clone(),
-            Some(Unit::Value(value)) => Box::new(value.clone()),
-            _ => {
-                return Err(create_parse_error!(
-                    // TODO: Change token to the actual token associated with the error.
-                    token,
-                    format!("Expected value on the left side of addition operator.")
-                ));
-            }
-        };
-        let right = match units.get(2) {
-            Some(Unit::Node(node)) => node.clone(),
-            Some(Unit::Value(value)) => Box::new(value.clone()),
-            _ => {
-                return Err(create_parse_error!(
-                    // TODO: Change token to the actual token associated with the error.
-                    token,
-                    format!("Expected value on the right side of addition operator.")
-                ));
-            }
-        };
-        Ok((left, right))
-    }
-
+    // Precdence starts off with the highest precedence level and goes down from there in the loop below.
     let mut current_precedence = 2;
 
     while current_precedence > 0 {
         let mut i = 0;
         while i < units.len() {
-            match (current_precedence, &units[i]) {
-                (1, Unit::Operator(TokenType::OperatorAddition)) => {
+            /// Parses a binary expression from the given units into AST nodes on the left and right side of the operator.
+            fn parse_binary_expression<'a>(
+                token: &Token<'_>,
+                units: &[Unit<'a>],
+            ) -> Result<(Box<AstNode<'a>>, Box<AstNode<'a>>), ParseError> {
+                let left = match units.get(0) {
+                    Some(Unit::Node(node)) => node.clone(),
+                    Some(Unit::Value(value)) => Box::new(value.clone()),
+                    _ => {
+                        return Err(create_parse_error!(
+                            // TODO: Change token to the actual token associated with the error.
+                            token,
+                            format!("Expected value on the left side of addition operator.")
+                        ));
+                    }
+                };
+                let right = match units.get(2) {
+                    Some(Unit::Node(node)) => node.clone(),
+                    Some(Unit::Value(value)) => Box::new(value.clone()),
+                    _ => {
+                        return Err(create_parse_error!(
+                            // TODO: Change token to the actual token associated with the error.
+                            token,
+                            format!("Expected value on the right side of addition operator.")
+                        ));
+                    }
+                };
+                Ok((left, right))
+            }
+
+            /// Reduces repetitive code for parsing binary expression for an operator.
+            /// This macro also ensures no additional function calls with all the parameter
+            /// passing associated with that is not needed.
+            macro_rules! parse_binary_expression_for_operator {
+                ($operator: ident) => {{
                     let binary_expr_begin_index = i - 1;
                     let binary_expr_end_index = i + 1;
                     let binary_expr_range = binary_expr_begin_index..=binary_expr_end_index;
@@ -473,28 +485,29 @@ fn parse_expression_until_token<'a>(
                     units.drain(binary_expr_range);
                     units.insert(
                         binary_expr_begin_index,
-                        Unit::Node(Box::new(AstNode::Addition(left, right))),
+                        Unit::Node(Box::new(AstNode::$operator(left, right))),
                     );
 
                     i += 2;
+                }};
+            }
+
+            // Match cases for each supported operator ordered by their precedence level in descending order.
+            match (current_precedence, &units[i]) {
+                (2, Unit::Operator(TokenType::OperatorDivision)) => {
+                    parse_binary_expression_for_operator!(Division)
                 }
                 (2, Unit::Operator(TokenType::OperatorMultiplication)) => {
-                    let binary_expr_begin_index = i - 1;
-                    let binary_expr_end_index = i + 1;
-                    let binary_expr_range = binary_expr_begin_index..=binary_expr_end_index;
-
-                    let (left, right) =
-                        parse_binary_expression(prev_token, &units[binary_expr_range.clone()])?;
-
-                    // Remove the existing units and replace them with a single node unit.
-                    units.drain(binary_expr_range);
-                    units.insert(
-                        binary_expr_begin_index,
-                        Unit::Node(Box::new(AstNode::Multiplication(left, right))),
-                    );
-
-                    i += 2;
+                    parse_binary_expression_for_operator!(Multiplication)
                 }
+
+                (1, Unit::Operator(TokenType::OperatorAddition)) => {
+                    parse_binary_expression_for_operator!(Addition)
+                }
+                (1, Unit::Operator(TokenType::OperatorSubstraction)) => {
+                    parse_binary_expression_for_operator!(Substraction)
+                }
+
                 _ => {
                     i += 1;
                 }
@@ -679,7 +692,7 @@ fn parse_variable_definition<'a>(
                             }
                         };
 
-                        let value = match parse_expression_until_token(
+                        let value = match parse_expression_until_token_type(
                             tokens.clone(),
                             &assignment_token,
                             TokenType::OperatorStatementEnd,
@@ -847,7 +860,7 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                     push_token_with_pos!(TokenType::OperatorArrow);
                     current_col += 2;
                 } else {
-                    push_token_with_pos!(TokenType::OperatorSubtraction);
+                    push_token_with_pos!(TokenType::OperatorSubstraction);
                     current_col += 1;
                 }
             }

@@ -54,6 +54,39 @@ mod tests {
                 ))
             )]
         );
+
+        // Variable x with 10 - 5 * 3.
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("I32")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralInteger(10)),
+            token_new!(TokenType::OperatorSubstraction),
+            token_new!(TokenType::LiteralInteger(5)),
+            token_new!(TokenType::OperatorMultiplication),
+            token_new!(TokenType::LiteralInteger(3)),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![],
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
+                Box::new(AstNode::Substraction(
+                    Box::new(AstNode::LiteralInteger(10)),
+                    Box::new(AstNode::Multiplication(
+                        Box::new(AstNode::LiteralInteger(5)),
+                        Box::new(AstNode::LiteralInteger(3))
+                    ))
+                ))
+            )]
+        );
     }
 
     #[test]
@@ -476,7 +509,7 @@ mod tests {
             tokens,
             vec![
                 token_new!(TokenType::OperatorAddition, 1, 0),
-                token_new!(TokenType::OperatorSubtraction, 1, 1),
+                token_new!(TokenType::OperatorSubstraction, 1, 1),
                 token_new!(TokenType::OperatorMultiplication, 1, 2),
                 token_new!(TokenType::OperatorDivision, 1, 3),
             ]
@@ -489,7 +522,7 @@ mod tests {
             tokens,
             vec![
                 token_new!(TokenType::OperatorAddition, 1, 0),
-                token_new!(TokenType::OperatorSubtraction, 1, 2),
+                token_new!(TokenType::OperatorSubstraction, 1, 2),
                 token_new!(TokenType::OperatorMultiplication, 1, 4),
                 token_new!(TokenType::OperatorDivision, 1, 6),
             ]
