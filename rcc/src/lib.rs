@@ -1,6 +1,7 @@
 #[derive(Clone, Debug, PartialEq)]
 pub enum AstNode<'a> {
     Addition(Box<AstNode<'a>>, Box<AstNode<'a>>),
+    BinaryAnd(Box<AstNode<'a>>, Box<AstNode<'a>>),
     Division(Box<AstNode<'a>>, Box<AstNode<'a>>),
     FunctionDefinition {
         attributes: Vec<AstNodeAttribute<'a>>,
@@ -93,6 +94,7 @@ pub enum TokenType<'a> {
     OperatorArrow,
     OperatorAssignment,
     OperatorAddition,
+    OperatorBinaryAnd,
     OperatorDivision,
     OperatorMultiplication,
     OperatorSubstraction,
@@ -411,6 +413,9 @@ fn parse_expression_until_token_type<'a>(
             TokenType::OperatorAddition => {
                 units.push(Unit::Operator(TokenType::OperatorAddition));
             }
+            TokenType::OperatorBinaryAnd => {
+                units.push(Unit::Operator(TokenType::OperatorBinaryAnd));
+            }
             TokenType::OperatorDivision => {
                 units.push(Unit::Operator(TokenType::OperatorDivision));
             }
@@ -434,7 +439,7 @@ fn parse_expression_until_token_type<'a>(
     }
 
     // Precdence starts off with the highest precedence level and goes down from there in the loop below.
-    let mut current_precedence = 2;
+    let mut current_precedence = 3;
 
     while current_precedence > 0 {
         let mut i = 0;
@@ -494,18 +499,22 @@ fn parse_expression_until_token_type<'a>(
 
             // Match cases for each supported operator ordered by their precedence level in descending order.
             match (current_precedence, &units[i]) {
-                (2, Unit::Operator(TokenType::OperatorDivision)) => {
+                (3, Unit::Operator(TokenType::OperatorDivision)) => {
                     parse_binary_expression_for_operator!(Division)
                 }
-                (2, Unit::Operator(TokenType::OperatorMultiplication)) => {
+                (3, Unit::Operator(TokenType::OperatorMultiplication)) => {
                     parse_binary_expression_for_operator!(Multiplication)
                 }
 
-                (1, Unit::Operator(TokenType::OperatorAddition)) => {
+                (2, Unit::Operator(TokenType::OperatorAddition)) => {
                     parse_binary_expression_for_operator!(Addition)
                 }
-                (1, Unit::Operator(TokenType::OperatorSubstraction)) => {
+                (2, Unit::Operator(TokenType::OperatorSubstraction)) => {
                     parse_binary_expression_for_operator!(Substraction)
+                }
+
+                (1, Unit::Operator(TokenType::OperatorBinaryAnd)) => {
+                    parse_binary_expression_for_operator!(BinaryAnd)
                 }
 
                 _ => {
@@ -863,6 +872,10 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                     push_token_with_pos!(TokenType::OperatorSubstraction);
                     current_col += 1;
                 }
+            }
+            '&' => {
+                push_token_with_pos!(TokenType::OperatorBinaryAnd);
+                current_col += 1;
             }
             ';' => {
                 push_token_with_pos!(TokenType::OperatorStatementEnd);

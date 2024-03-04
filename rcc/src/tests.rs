@@ -87,6 +87,39 @@ mod tests {
                 ))
             )]
         );
+
+        // Variable x with 10 + 5 & 2.
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("I32")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralInteger(10)),
+            token_new!(TokenType::OperatorAddition),
+            token_new!(TokenType::LiteralInteger(5)),
+            token_new!(TokenType::OperatorBinaryAnd),
+            token_new!(TokenType::LiteralInteger(2)),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![],
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
+                Box::new(AstNode::BinaryAnd(
+                    Box::new(AstNode::Addition(
+                        Box::new(AstNode::LiteralInteger(10)),
+                        Box::new(AstNode::LiteralInteger(5))
+                    )),
+                    Box::new(AstNode::LiteralInteger(2))
+                ))
+            )]
+        );
     }
 
     #[test]
@@ -525,6 +558,19 @@ mod tests {
                 token_new!(TokenType::OperatorSubstraction, 1, 2),
                 token_new!(TokenType::OperatorMultiplication, 1, 4),
                 token_new!(TokenType::OperatorDivision, 1, 6),
+            ]
+        );
+    }
+    #[test]
+    fn tokenize_operators_binary_and() {
+        let code = "5 & 10";
+        let tokens = tokenize(code).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                token_new!(TokenType::LiteralInteger(5), 1, 0),
+                token_new!(TokenType::OperatorBinaryAnd, 1, 2),
+                token_new!(TokenType::LiteralInteger(10), 1, 4),
             ]
         );
     }
