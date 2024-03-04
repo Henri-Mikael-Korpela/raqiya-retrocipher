@@ -218,7 +218,8 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                                                     return Err(create_parse_error!(
                                                         next_token,
                                                         format!(
-                                                            "Expected addition (+) after identifier. Instead, found: {:?}",
+                                                            "Expected addition (+) after identifier \"{}\". Instead, found: {:?}",
+                                                            name,
                                                             tokens.peek()
                                                         )
                                                     ));
