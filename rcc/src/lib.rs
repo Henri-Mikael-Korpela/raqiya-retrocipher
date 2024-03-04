@@ -401,6 +401,15 @@ fn parse_expression_until_token_type<'a>(
 
     while let Some(token) = tokens.next() {
         match token.type_ {
+            TokenType::DelimiterParenthesisOpen => {
+                let (expression, new_tokens) = parse_expression_until_token_type(
+                    tokens,
+                    token,
+                    TokenType::DelimiterParenthesisClose,
+                )?;
+                tokens = new_tokens;
+                units.push(Unit::Node(Box::new(expression)));
+            }
             TokenType::Identifier(name) => {
                 units.push(Unit::Value(AstNode::Identifier(name)));
             }
