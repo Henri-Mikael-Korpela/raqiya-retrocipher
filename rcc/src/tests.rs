@@ -21,6 +21,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_arithmetic_expression_with_multiple_precedences() {
+        // Variable x with 5 + 10 * 2.
+        let tokens = vec![
+            token_new!(TokenType::KeywordLet),
+            token_new!(TokenType::Identifier("x")),
+            token_new!(TokenType::DelimiterColon),
+            token_new!(TokenType::Identifier("I32")),
+            token_new!(TokenType::OperatorAssignment),
+            token_new!(TokenType::LiteralInteger(5)),
+            token_new!(TokenType::OperatorAddition),
+            token_new!(TokenType::LiteralInteger(10)),
+            token_new!(TokenType::OperatorMultiplication),
+            token_new!(TokenType::LiteralInteger(2)),
+            token_new!(TokenType::OperatorStatementEnd),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::VariableDefinition(
+                AstNodeVariableIdentifier::WithType {
+                    attributes: vec![],
+                    identifier_name: "x",
+                    type_name: "I32"
+                },
+                Box::new(AstNode::Addition(
+                    Box::new(AstNode::LiteralInteger(5)),
+                    Box::new(AstNode::Multiplication(
+                        Box::new(AstNode::LiteralInteger(10)),
+                        Box::new(AstNode::LiteralInteger(2))
+                    ))
+                ))
+            )]
+        );
+    }
+
+    #[test]
     fn parse_function_definition_without_parameters_and_empty_body() {
         let tokens = vec![
             token_new!(TokenType::KeywordFn),
