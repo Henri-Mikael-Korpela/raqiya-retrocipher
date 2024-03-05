@@ -103,6 +103,32 @@ pub enum TokenType<'a> {
 
 type PeekableTokenIter<'a> = std::iter::Peekable<std::slice::Iter<'a, Token<'a>>>;
 
+trait TokenIterExt {
+    fn next_if_matches(
+        &mut self,
+        expected_type: TokenType<'_>,
+    ) -> Result<&Token<'_>, Option<&Token<'_>>>;
+}
+
+impl<'a> TokenIterExt for PeekableTokenIter<'a> {
+    fn next_if_matches(
+        &mut self,
+        expected_type: TokenType<'_>,
+    ) -> Result<&Token<'_>, Option<&Token<'_>>> {
+        if let Some(token) = self.peek() {
+            if token.type_ == expected_type {
+                // Safety: The token is guaranteed to exist because
+                // the peek() method was called with a Some(_) result.
+                return Ok(self.next().unwrap());
+            } else {
+                return Err(Some(*token));
+            }
+        } else {
+            Err(None)
+        }
+    }
+}
+
 /// Creates a parse error with the given token and message.
 /// It also includes source code file and line information for debugging purposes.
 macro_rules! create_parse_error {
@@ -143,132 +169,151 @@ pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode
                             };
                         }
                         TokenType::Identifier(name) => {
+                            // Safety: The token is guaranteed to exist because
+                            // the peek() method was called with a Some(_) result.
                             let identifier_token = tokens.next().unwrap();
 
+                            tokens.next_if_matches(TokenType::DelimiterParenthesisOpen)
+                                .map_err(|_| {
+                                    create_parse_error!(
+                                        identifier_token,
+                                        String::from(
+                                            "Expected opening parenthesis after function name. Instead, no opening parenthesis found."
+                                        )
+                                    )
+                                })?;
+
+                            // Parse function parameters
+                            let parameters: Vec<AstNodeFunctionParameter<'_>>;
+                            (parameters, tokens) = match parse_function_parameters(tokens) {
+                                Ok(parameters) => parameters,
+                                Err(parse_error) => {
+                                    return Err(parse_error);
+                                }
+                            };
+
+                            // If there is a return type for the function after the parameters
                             if let Some(Token {
-                                type_: TokenType::DelimiterParenthesisOpen,
+                                type_: TokenType::OperatorArrow,
+                                ..
+                            }) = tokens.peek()
+                            {
+                                tokens.next();
+                                tokens.next(); // For now, ignore the return type of the function.
+                            }
+
+                            let mut body: Vec<AstNode<'_>> = vec![];
+
+                            // Expect a function body after the parameters and possible return type
+                            if let Some(Token {
+                                type_: TokenType::DelimiterBraceOpen { level },
                                 ..
                             }) = tokens.peek()
                             {
                                 tokens.next();
 
-                                // Parse function parameters
-                                let parameters: Vec<AstNodeFunctionParameter<'_>>;
-                                (parameters, tokens) = match parse_function_parameters(tokens) {
-                                    Ok(parameters) => parameters,
-                                    Err(parse_error) => {
-                                        return Err(parse_error);
-                                    }
-                                };
+                                let function_body_opening_level = *level;
+                                let mut prev_value_token = None;
 
-                                // If there is a return type for the function after the parameters
-                                if let Some(Token {
-                                    type_: TokenType::OperatorArrow,
-                                    ..
-                                }) = tokens.peek()
-                                {
-                                    tokens.next();
-                                    tokens.next(); // For now, ignore the return type of the function.
-                                }
+                                while let Some(next_token) = tokens.next() {
+                                    match next_token.type_ {
+                                        TokenType::DelimiterBraceClose { level }
+                                            if level == function_body_opening_level =>
+                                        {
+                                            // If encounted an integer literal right before the closing brace,
+                                            // then it is the return value of the function as in Rust.
+                                            // In Rust, the last expression in a function (no semicolon after the value) is the return value.
+                                            if let Some(prev_value_token) = prev_value_token {
+                                                body.push(AstNode::ReturnStatement(Box::new(
+                                                    prev_value_token,
+                                                )));
+                                            }
 
-                                let mut body: Vec<AstNode<'_>> = vec![];
+                                            ast_nodes.push(AstNode::FunctionDefinition {
+                                                attributes,
+                                                name,
+                                                parameters,
+                                                body,
+                                            });
+                                            continue 'main_parse_loop;
+                                        }
+                                        TokenType::Identifier(name) => {
+                                            let prev_token = next_token;
+                                            // Expect an addition to follow this identifier token.
+                                            let _ = tokens.next_if_matches(TokenType::OperatorAddition)
+                                                .map_err(|next_token| {
+                                                    match next_token {
+                                                        Some(next_token) => {
+                                                            create_parse_error!(
+                                                                next_token,
+                                                                format!(
+                                                                    "Expected addition (+) after identifier \"{}\". Instead, found: {:?}",
+                                                                    name,
+                                                                    next_token
+                                                                )
+                                                            )
+                                                        }
+                                                        None => {
+                                                            create_parse_error!(
+                                                                prev_token,
+                                                                format!(
+                                                                    "Expected addition (+) after identifier \"{}\". Instead, did not find any token.", name
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                })?;
 
-                                // Expect a function body after the parameters and possible return type
-                                if let Some(Token {
-                                    type_: TokenType::DelimiterBraceOpen { level },
-                                    ..
-                                }) = tokens.peek()
-                                {
-                                    tokens.next();
-
-                                    let function_body_opening_level = *level;
-                                    let mut prev_value_token = None;
-
-                                    while let Some(next_token) = tokens.next() {
-                                        match next_token.type_ {
-                                            TokenType::DelimiterBraceClose { level }
-                                                if level == function_body_opening_level =>
+                                            prev_value_token = if let Some(Token {
+                                                type_: TokenType::Identifier(name2),
+                                                ..
+                                            }) = tokens.peek()
                                             {
-                                                // If encounted an integer literal right before the closing brace,
-                                                // then it is the return value of the function as in Rust.
-                                                // In Rust, the last expression in a function (no semicolon after the value) is the return value.
-                                                if let Some(prev_value_token) = prev_value_token {
-                                                    body.push(AstNode::ReturnStatement(Box::new(
-                                                        prev_value_token,
-                                                    )));
-                                                }
+                                                tokens.next();
 
-                                                ast_nodes.push(AstNode::FunctionDefinition {
-                                                    attributes,
-                                                    name,
-                                                    parameters,
-                                                    body,
-                                                });
-                                                continue 'main_parse_loop;
-                                            }
-                                            TokenType::Identifier(name) => {
-                                                // Expect an addition to follow this identifier token.
-                                                if !matches!(
-                                                    tokens.next(),
-                                                    Some(Token {
-                                                        type_: TokenType::OperatorAddition,
-                                                        ..
-                                                    })
-                                                ) {
-                                                    return Err(create_parse_error!(
-                                                        next_token,
-                                                        format!(
-                                                            "Expected addition (+) after identifier \"{}\". Instead, found: {:?}",
-                                                            name,
-                                                            tokens.peek()
-                                                        )
-                                                    ));
-                                                }
-
-                                                prev_value_token = if let Some(Token {
-                                                    type_: TokenType::Identifier(name2),
-                                                    ..
-                                                }) = tokens.peek()
-                                                {
-                                                    tokens.next();
-
-                                                    Some(AstNode::Addition(
-                                                        Box::new(AstNode::Identifier(name)),
-                                                        Box::new(AstNode::Identifier(name2)),
-                                                    ))
-                                                } else {
-                                                    return Err(create_parse_error!(
-                                                        next_token,
-                                                        format!(
-                                                            "Expected identifier after addition (+). Instead, found: {:?}",
-                                                            tokens.peek()
-                                                        )
-                                                    ));
-                                                }
-                                            }
-                                            TokenType::LiteralInteger(value) => {
-                                                prev_value_token =
-                                                    Some(AstNode::LiteralInteger(value));
-                                            }
-                                            _ => {
-                                                prev_value_token = None;
+                                                Some(AstNode::Addition(
+                                                    Box::new(AstNode::Identifier(name)),
+                                                    Box::new(AstNode::Identifier(name2)),
+                                                ))
+                                            } else {
+                                                return Err(create_parse_error!(
+                                                    next_token,
+                                                    format!(
+                                                        "Expected identifier after addition (+). Instead, found: {:?}",
+                                                        tokens.peek()
+                                                    )
+                                                ));
                                             }
                                         }
+                                        TokenType::KeywordLet => {
+                                            match parse_variable_definition(
+                                                tokens,
+                                                next_token,
+                                                &Scope::Function,
+                                            ) {
+                                                Ok((new_ast_nodes, new_tokens)) => {
+                                                    body.extend(new_ast_nodes);
+                                                    tokens = new_tokens;
+                                                }
+                                                Err(parse_error) => {
+                                                    return Err(parse_error);
+                                                }
+                                            }
+                                        }
+                                        TokenType::LiteralInteger(value) => {
+                                            prev_value_token = Some(AstNode::LiteralInteger(value));
+                                        }
+                                        _ => {
+                                            prev_value_token = None;
+                                        }
                                     }
-                                } else {
-                                    return Err(create_parse_error!(
-                                        identifier_token,
-                                        format!(
-                                            "Expected opening brace after function parameters. Instead, found: {:?}",
-                                            tokens.peek()
-                                        )
-                                    ));
                                 }
                             } else {
                                 return Err(create_parse_error!(
                                     identifier_token,
-                                    String::from(
-                                        "Expected opening parenthesis after function name. Instead, no opening parenthesis found."
+                                    format!(
+                                        "Expected opening brace after function parameters. Instead, found: {:?}",
+                                        tokens.peek()
                                     )
                                 ));
                             }
@@ -712,7 +757,7 @@ fn parse_variable_definition<'a>(
                         };
 
                         let value = match parse_expression_until_token_type(
-                            tokens.clone(),
+                            tokens,
                             &assignment_token,
                             TokenType::OperatorStatementEnd,
                         ) {
@@ -898,6 +943,9 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
             '\n' => {
                 current_col = 0;
                 current_line += 1;
+            }
+            '\t' => {
+                current_col += 1;
             }
             '#' => {
                 // Skip this character, because it is not stored as part of the attribute token.
