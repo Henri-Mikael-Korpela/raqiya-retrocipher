@@ -38,7 +38,13 @@ mod tests {
             token_new!(TokenType::LiteralInteger(2)),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -73,7 +79,13 @@ mod tests {
             token_new!(TokenType::LiteralInteger(2)),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -108,7 +120,13 @@ mod tests {
             token_new!(TokenType::LiteralInteger(2)),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -143,7 +161,13 @@ mod tests {
             token_new!(TokenType::LiteralInteger(3)),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -304,6 +328,25 @@ mod tests {
             }]
         );
     }
+
+    #[test]
+    fn parse_if_expression_with_empty_body() {
+        let tokens = vec![
+            token_new!(TokenType::KeywordIf),
+            token_new!(TokenType::LiteralBooleanTrue),
+            token_new!(TokenType::DelimiterBraceOpen { level: 0 }),
+            token_new!(TokenType::DelimiterBraceClose { level: 0 }),
+        ];
+        let ast_nodes = parse(&tokens, Scope::Global).unwrap();
+        assert_eq!(
+            ast_nodes,
+            vec![AstNode::IfExpression {
+                condition: Box::new(AstNode::LiteralBooleanTrue),
+                body: vec![]
+            }]
+        );
+    }
+
     #[test]
     fn parse_variable_definition_with_callable_attribute() {
         let tokens = vec![
@@ -404,7 +447,13 @@ mod tests {
             token_new!(TokenType::LiteralInteger(5)),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -427,7 +476,13 @@ mod tests {
             token_new!(TokenType::LiteralInteger(5)),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(
@@ -451,7 +506,13 @@ mod tests {
             token_new!(TokenType::LiteralString("Hello, World!")),
             token_new!(TokenType::OperatorStatementEnd),
         ];
-        let ast_nodes = parse(&tokens, Scope::Function).unwrap();
+        let ast_nodes = parse(
+            &tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(
             ast_nodes,
             vec![AstNode::VariableDefinition(

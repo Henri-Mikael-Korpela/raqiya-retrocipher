@@ -9,13 +9,30 @@ pub enum AstNode<'a> {
         parameters: Vec<AstNodeFunctionParameter<'a>>,
         body: Vec<AstNode<'a>>,
     },
+    GreaterThan(Box<AstNode<'a>>, Box<AstNode<'a>>),
     Identifier(&'a str),
+    IfExpression {
+        body: Vec<AstNode<'a>>,
+        condition: Box<AstNode<'a>>,
+    },
+    LessThan(Box<AstNode<'a>>, Box<AstNode<'a>>),
+    LiteralBooleanFalse,
+    LiteralBooleanTrue,
     LiteralInteger(i64),
     LiteralString(&'a str),
     Multiplication(Box<AstNode<'a>>, Box<AstNode<'a>>),
     ReturnStatement(Box<AstNode<'a>>),
     Substraction(Box<AstNode<'a>>, Box<AstNode<'a>>),
     VariableDefinition(AstNodeVariableIdentifier<'a>, Box<AstNode<'a>>),
+}
+
+impl AstNode<'_> {
+    pub fn can_be_return_value(&self) -> bool {
+        match self {
+            AstNode::Addition(_, _) | AstNode::LiteralInteger(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,11 +77,13 @@ impl ParseError {
 
 #[derive(Debug, PartialEq)]
 pub enum Scope {
+    Expression,
     Global,
-    Function,
+    Function { body_begin_level: usize },
 }
 
 const KEYWORD_FN: &str = "fn";
+const KEYWORD_IF: &str = "if";
 const KEYWORD_LET: &str = "let";
 const KEYWORD_FALSE: &str = "false";
 const KEYWORD_TRUE: &str = "true";
@@ -90,44 +109,26 @@ pub enum TokenType<'a> {
     LiteralInteger(i64),
     LiteralString(&'a str),
     KeywordFn,
+    KeywordIf,
     KeywordLet,
     OperatorArrow,
     OperatorAssignment,
     OperatorAddition,
     OperatorBinaryAnd,
     OperatorDivision,
+    OperatorGreaterThan,
+    OperatorLessThan,
     OperatorMultiplication,
     OperatorSubstraction,
     OperatorStatementEnd,
 }
 
+pub fn parse<'a>(tokens: &'a [Token<'_>], scope: Scope) -> Result<Vec<AstNode<'a>>, ParseError> {
+    let (ast_nodes, _) = parse_internal(tokens.iter().peekable(), scope)?;
+    Ok(ast_nodes)
+}
+
 type PeekableTokenIter<'a> = std::iter::Peekable<std::slice::Iter<'a, Token<'a>>>;
-
-trait TokenIterExt {
-    fn next_if_matches(
-        &mut self,
-        expected_type: TokenType<'_>,
-    ) -> Result<&Token<'_>, Option<&Token<'_>>>;
-}
-
-impl<'a> TokenIterExt for PeekableTokenIter<'a> {
-    fn next_if_matches(
-        &mut self,
-        expected_type: TokenType<'_>,
-    ) -> Result<&Token<'_>, Option<&Token<'_>>> {
-        if let Some(token) = self.peek() {
-            if token.type_ == expected_type {
-                // Safety: The token is guaranteed to exist because
-                // the peek() method was called with a Some(_) result.
-                return Ok(self.next().unwrap());
-            } else {
-                return Err(Some(*token));
-            }
-        } else {
-            Err(None)
-        }
-    }
-}
 
 /// Creates a parse error with the given token and message.
 /// It also includes source code file and line information for debugging purposes.
@@ -146,205 +147,95 @@ macro_rules! create_parse_error {
     };
 }
 
-pub fn parse<'a>(tokens: &'a Vec<Token<'a>>, scope: Scope) -> Result<Vec<AstNode<'a>>, ParseError> {
-    let mut tokens: PeekableTokenIter<'a> = tokens.iter().peekable();
+fn parse_internal<'a>(
+    mut tokens: PeekableTokenIter<'a>,
+    scope: Scope,
+) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
+    let mut ast_nodes: Vec<AstNode<'_>> = vec![];
 
-    let mut ast_nodes = vec![];
-
-    'main_parse_loop: while let Some(token) = tokens.next() {
+    while let Some(token) = tokens.peek() {
+        // Make a copy of the token and clone its type in order to satisfy the borrow checker.
+        // If the tokens iterator is modified, it could invalidate token type reference.
+        let token = &Token {
+            col: token.col,
+            line: token.line,
+            type_: token.type_.clone(),
+        };
         match token.type_ {
-            TokenType::KeywordFn => {
-                let mut attributes = vec![];
+            TokenType::DelimiterBraceClose { level } => {
+                tokens.next();
 
-                while let Some(token) = tokens.peek() {
-                    match token.type_ {
-                        TokenType::Attribute(name) => {
-                            tokens.next();
-
-                            (tokens, attributes) = match parse_attributes(tokens, name) {
-                                Ok((attributes, new_tokens)) => (new_tokens, attributes),
-                                Err(parse_error) => {
-                                    return Err(parse_error);
-                                }
-                            };
-                        }
-                        TokenType::Identifier(name) => {
-                            // Safety: The token is guaranteed to exist because
-                            // the peek() method was called with a Some(_) result.
-                            let identifier_token = tokens.next().unwrap();
-
-                            tokens.next_if_matches(TokenType::DelimiterParenthesisOpen)
-                                .map_err(|_| {
-                                    create_parse_error!(
-                                        identifier_token,
-                                        String::from(
-                                            "Expected opening parenthesis after function name. Instead, no opening parenthesis found."
-                                        )
-                                    )
-                                })?;
-
-                            // Parse function parameters
-                            let parameters: Vec<AstNodeFunctionParameter<'_>>;
-                            (parameters, tokens) = match parse_function_parameters(tokens) {
-                                Ok(parameters) => parameters,
-                                Err(parse_error) => {
-                                    return Err(parse_error);
-                                }
-                            };
-
-                            // If there is a return type for the function after the parameters
-                            if let Some(Token {
-                                type_: TokenType::OperatorArrow,
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-                                tokens.next(); // For now, ignore the return type of the function.
-                            }
-
-                            let mut body: Vec<AstNode<'_>> = vec![];
-
-                            // Expect a function body after the parameters and possible return type
-                            if let Some(Token {
-                                type_: TokenType::DelimiterBraceOpen { level },
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-
-                                let function_body_opening_level = *level;
-                                let mut prev_value_token = None;
-
-                                while let Some(next_token) = tokens.next() {
-                                    match next_token.type_ {
-                                        TokenType::DelimiterBraceClose { level }
-                                            if level == function_body_opening_level =>
-                                        {
-                                            // If encounted an integer literal right before the closing brace,
-                                            // then it is the return value of the function as in Rust.
-                                            // In Rust, the last expression in a function (no semicolon after the value) is the return value.
-                                            if let Some(prev_value_token) = prev_value_token {
-                                                body.push(AstNode::ReturnStatement(Box::new(
-                                                    prev_value_token,
-                                                )));
-                                            }
-
-                                            ast_nodes.push(AstNode::FunctionDefinition {
-                                                attributes,
-                                                name,
-                                                parameters,
-                                                body,
-                                            });
-                                            continue 'main_parse_loop;
-                                        }
-                                        TokenType::Identifier(name) => {
-                                            let prev_token = next_token;
-                                            // Expect an addition to follow this identifier token.
-                                            let _ = tokens.next_if_matches(TokenType::OperatorAddition)
-                                                .map_err(|next_token| {
-                                                    match next_token {
-                                                        Some(next_token) => {
-                                                            create_parse_error!(
-                                                                next_token,
-                                                                format!(
-                                                                    "Expected addition (+) after identifier \"{}\". Instead, found: {:?}",
-                                                                    name,
-                                                                    next_token
-                                                                )
-                                                            )
-                                                        }
-                                                        None => {
-                                                            create_parse_error!(
-                                                                prev_token,
-                                                                format!(
-                                                                    "Expected addition (+) after identifier \"{}\". Instead, did not find any token.", name
-                                                                )
-                                                            )
-                                                        }
-                                                    }
-                                                })?;
-
-                                            prev_value_token = if let Some(Token {
-                                                type_: TokenType::Identifier(name2),
-                                                ..
-                                            }) = tokens.peek()
-                                            {
-                                                tokens.next();
-
-                                                Some(AstNode::Addition(
-                                                    Box::new(AstNode::Identifier(name)),
-                                                    Box::new(AstNode::Identifier(name2)),
-                                                ))
-                                            } else {
-                                                return Err(create_parse_error!(
-                                                    next_token,
-                                                    format!(
-                                                        "Expected identifier after addition (+). Instead, found: {:?}",
-                                                        tokens.peek()
-                                                    )
-                                                ));
-                                            }
-                                        }
-                                        TokenType::KeywordLet => {
-                                            match parse_variable_definition(
-                                                tokens,
-                                                next_token,
-                                                &Scope::Function,
-                                            ) {
-                                                Ok((new_ast_nodes, new_tokens)) => {
-                                                    body.extend(new_ast_nodes);
-                                                    tokens = new_tokens;
-                                                }
-                                                Err(parse_error) => {
-                                                    return Err(parse_error);
-                                                }
-                                            }
-                                        }
-                                        TokenType::LiteralInteger(value) => {
-                                            prev_value_token = Some(AstNode::LiteralInteger(value));
-                                        }
-                                        _ => {
-                                            prev_value_token = None;
-                                        }
-                                    }
-                                }
-                            } else {
-                                return Err(create_parse_error!(
-                                    identifier_token,
-                                    format!(
-                                        "Expected opening brace after function parameters. Instead, found: {:?}",
-                                        tokens.peek()
-                                    )
-                                ));
-                            }
-                        }
-                        _ => {
-                            return Err(create_parse_error!(
-                                token,
-                                format!(
-                                    "Expected function attributes or name after '{KEYWORD_FN}' keyword. Instead, got {:?}",
-                                    tokens.peek()
-                                )
-                            ));
-                        }
-                    }
+                if level == 0 {
+                    break;
                 }
             }
-            TokenType::KeywordLet => match parse_variable_definition(tokens, token, &scope) {
-                Ok((new_ast_nodes, new_tokens)) => {
-                    ast_nodes.extend(new_ast_nodes);
+            TokenType::Identifier(_)
+            | TokenType::LiteralBooleanFalse
+            | TokenType::LiteralBooleanTrue
+            | TokenType::LiteralInteger(_) => {
+                let end_level = 0;
+                let (expression_node, new_tokens) =
+                    // Clone to make the borrow checker happy.
+                    parse_expression_until_noninclusive(tokens.clone(), token, |token| {
+                        if let TokenType::DelimiterBraceClose { level } = token.type_ {
+                            if level == end_level {
+                                return true;
+                            }
+                        }
+                        false
+                    })?;
+
+                ast_nodes.push(expression_node);
+
+                if let Ok((_, new_tokens)) = parse_internal(new_tokens, Scope::Expression) {
                     tokens = new_tokens;
+                    return Ok((ast_nodes, tokens));
                 }
-                Err(parse_error) => {
-                    return Err(parse_error);
+            }
+            TokenType::KeywordFn => {
+                tokens.next();
+
+                let (new_ast_node, new_tokens) = parse_function(tokens, token)?;
+                ast_nodes.push(new_ast_node);
+                tokens = new_tokens;
+            }
+            TokenType::KeywordIf => {
+                tokens.next();
+
+                let (new_ast_node, new_tokens) = parse_if_expression(
+                    tokens,
+                    token,
+                    &Scope::Function {
+                        body_begin_level: 0,
+                    },
+                )?;
+                ast_nodes.push(new_ast_node);
+                tokens = new_tokens;
+            }
+            TokenType::KeywordLet => {
+                tokens.next();
+
+                let (new_ast_node, new_tokens) = parse_variable_definition(tokens, token, &scope)?;
+                ast_nodes.push(new_ast_node);
+                tokens = new_tokens;
+            }
+            TokenType::OperatorStatementEnd => {
+                if scope == Scope::Expression {
+                    tokens.next();
+                } else {
+                    return Err(create_parse_error!(
+                        token,
+                        format!("Unexpected statement end token. The statement end token must follow an expression.")
+                    ));
                 }
-            },
+            }
             _ => {}
         }
     }
 
-    Ok(ast_nodes)
+    Ok((ast_nodes, tokens))
 }
+
 /// Parses attributes from the given token iterator from both functions and variable definitions.
 /// The given iterator is expected to have consumed the first attribute name token.
 fn parse_attributes<'a>(
@@ -430,11 +321,42 @@ fn parse_attributes<'a>(
     Ok((attributes, tokens))
 }
 
-fn parse_expression_until_token_type<'a>(
+/// Parses an expression from a given token iterator until a condition is met.
+/// This condition is determined by a given predicate.
+/// The token with the matching predicate is consumed.
+fn parse_expression_until_inclusive<'a, F>(
+    tokens: PeekableTokenIter<'a>,
+    prev_token: &Token<'_>,
+    predicate: F,
+) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError>
+where
+    F: Fn(&Token<'_>) -> bool,
+{
+    let (ast_node, mut new_tokens) =
+        parse_expression_until_noninclusive(tokens, prev_token, predicate)?;
+
+    // If the consumption of the token in the matching predicate is successful
+    if let Some(_) = new_tokens.next() {
+        Ok((ast_node, new_tokens))
+    } else {
+        Err(create_parse_error!(
+            prev_token,
+            format!("Unexpected end of tokens for an expression.")
+        ))
+    }
+}
+
+/// Parses an expression from a given token iterator until a condition is met.
+/// This condition is determined by a given predicate.
+/// The token with the matching predicate is not consumed.
+fn parse_expression_until_noninclusive<'a, F>(
     mut tokens: PeekableTokenIter<'a>,
     prev_token: &Token<'_>,
-    end_token_type: TokenType<'_>,
-) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError> {
+    predicate: F,
+) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError>
+where
+    F: Fn(&Token<'_>) -> bool,
+{
     /// TODO: Think of a better name for this type.
     #[derive(Clone, Debug)]
     enum Unit<'a> {
@@ -443,58 +365,102 @@ fn parse_expression_until_token_type<'a>(
         Value(AstNode<'a>),
     }
 
+    // The reason this function exists is to avoid recursion problem associated with a closure.
+    fn token_matches_parenthesis_close(token: &Token<'_>) -> bool {
+        matches!(token.type_, TokenType::DelimiterParenthesisClose)
+    }
+
     let mut units = vec![];
 
-    while let Some(token) = tokens.next() {
-        match token.type_ {
-            TokenType::DelimiterParenthesisOpen => {
-                let (expression, new_tokens) = parse_expression_until_token_type(
-                    tokens,
-                    token,
-                    TokenType::DelimiterParenthesisClose,
-                )?;
-                tokens = new_tokens;
-                units.push(Unit::Node(Box::new(expression)));
-            }
-            TokenType::Identifier(name) => {
-                units.push(Unit::Value(AstNode::Identifier(name)));
-            }
-            TokenType::LiteralInteger(value) => {
-                units.push(Unit::Value(AstNode::LiteralInteger(value)));
-            }
-            TokenType::LiteralString(value) => {
-                units.push(Unit::Value(AstNode::LiteralString(value)));
-            }
-            TokenType::OperatorAddition => {
-                units.push(Unit::Operator(TokenType::OperatorAddition));
-            }
-            TokenType::OperatorBinaryAnd => {
-                units.push(Unit::Operator(TokenType::OperatorBinaryAnd));
-            }
-            TokenType::OperatorDivision => {
-                units.push(Unit::Operator(TokenType::OperatorDivision));
-            }
-            TokenType::OperatorMultiplication => {
-                units.push(Unit::Operator(TokenType::OperatorMultiplication));
-            }
-            TokenType::OperatorSubstraction => {
-                units.push(Unit::Operator(TokenType::OperatorSubstraction));
-            }
-            _ => {
-                if token.type_ == end_token_type {
-                    break;
-                } else {
-                    return Err(create_parse_error!(
+    'expression_loop: {
+        while let Some(token) = tokens.peek() {
+            let token = &Token {
+                col: token.col,
+                line: token.line,
+                type_: token.type_.clone(),
+            };
+            match token.type_ {
+                TokenType::DelimiterParenthesisOpen => {
+                    tokens.next();
+
+                    let (expression, new_tokens) = parse_expression_until_inclusive(
+                        tokens,
                         token,
-                        format!("Unexpected token {:?}.", token)
-                    ));
+                        token_matches_parenthesis_close,
+                    )?;
+                    tokens = new_tokens;
+                    units.push(Unit::Node(Box::new(expression)));
+                }
+                TokenType::Identifier(name) => {
+                    tokens.next();
+                    units.push(Unit::Value(AstNode::Identifier(name)));
+                }
+                TokenType::LiteralBooleanFalse => {
+                    tokens.next();
+                    units.push(Unit::Value(AstNode::LiteralBooleanFalse));
+                }
+                TokenType::LiteralBooleanTrue => {
+                    tokens.next();
+                    units.push(Unit::Value(AstNode::LiteralBooleanTrue));
+                }
+                TokenType::LiteralInteger(value) => {
+                    tokens.next();
+                    units.push(Unit::Value(AstNode::LiteralInteger(value)));
+                }
+                TokenType::LiteralString(value) => {
+                    tokens.next();
+                    units.push(Unit::Value(AstNode::LiteralString(value)));
+                }
+                TokenType::OperatorAddition => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorAddition));
+                }
+                TokenType::OperatorBinaryAnd => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorBinaryAnd));
+                }
+                TokenType::OperatorDivision => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorDivision));
+                }
+                TokenType::OperatorGreaterThan => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorGreaterThan));
+                }
+                TokenType::OperatorLessThan => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorLessThan));
+                }
+                TokenType::OperatorMultiplication => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorMultiplication));
+                }
+                TokenType::OperatorSubstraction => {
+                    tokens.next();
+                    units.push(Unit::Operator(TokenType::OperatorSubstraction));
+                }
+                _ => {
+                    if predicate(token) {
+                        break 'expression_loop;
+                    } else {
+                        return Err(create_parse_error!(
+                            token,
+                            format!("Unexpected token {:?}.", token)
+                        ));
+                    }
                 }
             }
         }
+
+        // If no end condition and the tokens ran out, then it is an error.
+        return Err(create_parse_error!(
+            prev_token,
+            format!("Unexpected end of tokens for an expression.")
+        ));
     }
 
     // Precdence starts off with the highest precedence level and goes down from there in the loop below.
-    let mut current_precedence = 3;
+    let mut current_precedence = 4;
 
     while current_precedence > 0 {
         let mut i = 0;
@@ -554,18 +520,25 @@ fn parse_expression_until_token_type<'a>(
 
             // Match cases for each supported operator ordered by their precedence level in descending order.
             match (current_precedence, &units[i]) {
-                (3, Unit::Operator(TokenType::OperatorDivision)) => {
+                (4, Unit::Operator(TokenType::OperatorDivision)) => {
                     parse_binary_expression_for_operator!(Division)
                 }
-                (3, Unit::Operator(TokenType::OperatorMultiplication)) => {
+                (4, Unit::Operator(TokenType::OperatorMultiplication)) => {
                     parse_binary_expression_for_operator!(Multiplication)
                 }
 
-                (2, Unit::Operator(TokenType::OperatorAddition)) => {
+                (3, Unit::Operator(TokenType::OperatorAddition)) => {
                     parse_binary_expression_for_operator!(Addition)
                 }
-                (2, Unit::Operator(TokenType::OperatorSubstraction)) => {
+                (3, Unit::Operator(TokenType::OperatorSubstraction)) => {
                     parse_binary_expression_for_operator!(Substraction)
+                }
+
+                (2, Unit::Operator(TokenType::OperatorGreaterThan)) => {
+                    parse_binary_expression_for_operator!(GreaterThan)
+                }
+                (2, Unit::Operator(TokenType::OperatorLessThan)) => {
+                    parse_binary_expression_for_operator!(LessThan)
                 }
 
                 (1, Unit::Operator(TokenType::OperatorBinaryAnd)) => {
@@ -596,6 +569,104 @@ fn parse_expression_until_token_type<'a>(
     }?;
 
     Ok((ast_node, tokens))
+}
+
+fn parse_function<'a>(
+    mut tokens: PeekableTokenIter<'a>,
+    prev_token: &Token<'_>,
+) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError> {
+    let mut attributes = vec![];
+    let mut identifier_token: Option<&'a Token<'_>> = None;
+    let mut name: Option<&'a str> = None;
+    let mut parameters: Vec<AstNodeFunctionParameter<'_>> = vec![];
+
+    while let Some(token) = tokens.next() {
+        match token.type_ {
+            TokenType::Attribute(name) => {
+                (attributes, tokens) = parse_attributes(tokens, name)?;
+            }
+            TokenType::DelimiterBraceOpen { level } if level == 0 => {
+                let function_body_ast_nodes: Vec<AstNode<'_>>;
+                (function_body_ast_nodes, tokens) = parse_function_body(tokens)?;
+
+                let Some(name) = name else {
+                    return Err(create_parse_error!(
+                        token,
+                        String::from("Expected function name before opening brace for beginning function body.")
+                    ));
+                };
+
+                return Ok((
+                    AstNode::FunctionDefinition {
+                        attributes,
+                        name,
+                        parameters,
+                        body: function_body_ast_nodes,
+                    },
+                    tokens,
+                ));
+            }
+            TokenType::DelimiterParenthesisOpen => {
+                let (Some(_), Some(_)) = (identifier_token, name) else {
+                    return Err(create_parse_error!(
+                        token,
+                        String::from("Expected identifier before opening parenthesis for beginning function parameters.")
+                    ));
+                };
+
+                // Parse function parameters
+                (parameters, tokens) = parse_function_parameters(tokens)?;
+            }
+            TokenType::Identifier(identifier_name) => {
+                identifier_token = Some(token);
+                name = Some(identifier_name);
+            }
+            TokenType::OperatorArrow => {
+                // Ignore the return type of the function for now.
+                tokens.next();
+            }
+            _ => {
+                return Err(create_parse_error!(
+                    token,
+                    String::from("Unexpected token.")
+                ));
+            }
+        }
+    }
+
+    Err(create_parse_error!(
+        prev_token,
+        String::from("Unexpected token.")
+    ))
+}
+
+fn parse_function_body<'a>(
+    mut tokens: PeekableTokenIter<'a>,
+) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
+    let mut resulting_ast_nodes: Vec<AstNode<'_>> = vec![];
+
+    // As long as there are tokens left to parse
+    while let Some(_) = tokens.peek() {
+        let ast_nodes: Vec<AstNode<'_>>;
+        (ast_nodes, tokens) = parse_internal(
+            tokens,
+            Scope::Function {
+                body_begin_level: 0,
+            },
+        )?;
+        resulting_ast_nodes.extend(ast_nodes);
+    }
+
+    // If the last node in the function body is an expression,
+    // then it is implicitly a return statement, as in Rust.
+    if let Some(last_ast_node_in_body) = resulting_ast_nodes.last_mut() {
+        if last_ast_node_in_body.can_be_return_value() {
+            let node = last_ast_node_in_body.clone();
+            *last_ast_node_in_body = AstNode::ReturnStatement(Box::new(node));
+        }
+    }
+
+    Ok((resulting_ast_nodes, tokens))
 }
 
 fn parse_function_parameters<'a>(
@@ -670,29 +741,52 @@ fn parse_function_parameters<'a>(
     Ok((resulting_parameters, tokens))
 }
 
+fn parse_if_expression<'a>(
+    tokens: PeekableTokenIter<'a>,
+    token: &Token<'_>,
+    scope: &Scope,
+) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError> {
+    let body_begin_level = match *scope {
+        Scope::Function { body_begin_level } => body_begin_level,
+        _ => {
+            return Err(create_parse_error!(
+                token,
+                format!(
+                    "If expressions are only allowed in function scope, not in the global scope."
+                )
+            ));
+        }
+    };
+
+    let (condition, tokens) =
+        parse_expression_until_inclusive(tokens, token, |token| match token.type_ {
+            TokenType::DelimiterBraceOpen { level } => level == body_begin_level,
+            _ => false,
+        })?;
+
+    Ok((
+        AstNode::IfExpression {
+            body: vec![],
+            condition: Box::new(condition),
+        },
+        tokens,
+    ))
+}
+
 fn parse_variable_definition<'a>(
     mut tokens: PeekableTokenIter<'a>,
     token: &Token<'_>,
     scope: &Scope,
-) -> Result<(Vec<AstNode<'a>>, PeekableTokenIter<'a>), ParseError> {
+) -> Result<(AstNode<'a>, PeekableTokenIter<'a>), ParseError> {
     let mut attributes: Vec<AstNodeAttribute<'_>> = vec![];
-    let mut ast_nodes: Vec<AstNode<'_>> = vec![];
+    let mut variable_name: Option<&'a str> = None;
+    let mut variable_type_name: Option<&'a str> = None;
 
-    'variable_defition_parsing_loop: loop {
-        match tokens.peek() {
-            Some(Token {
-                type_: TokenType::Attribute(name),
-                ..
-            }) => {
+    while let Some(token) = tokens.next() {
+        match token.type_ {
+            TokenType::Attribute(name) => {
                 // In this state, expect more than one attribute to follow.
-                tokens.next();
-
-                (tokens, attributes) = match parse_attributes(tokens, name) {
-                    Ok((attributes, new_tokens)) => (new_tokens, attributes),
-                    Err(parse_error) => {
-                        return Err(parse_error);
-                    }
-                };
+                (attributes, tokens) = parse_attributes(tokens, name)?;
 
                 // Ensure that static variables are only allowed in the global scope.
                 if attributes.contains(&AstNodeAttribute::Value("static"))
@@ -705,144 +799,89 @@ fn parse_variable_definition<'a>(
                         )
                     ));
                 }
-
-                continue 'variable_defition_parsing_loop;
             }
-            Some(Token {
-                type_: TokenType::Identifier(name),
-                ..
-            }) => {
-                tokens.next();
+            TokenType::DelimiterColon => {
+                if variable_name.is_none() {
+                    return Err(create_parse_error!(
+                        token,
+                        format!(
+                            "Expected variable name before colon. Instead, found: {:?}",
+                            token
+                        )
+                    ));
+                };
 
-                match tokens.peek() {
+                let variable_type = match tokens.next() {
                     Some(Token {
-                        type_: TokenType::DelimiterColon,
+                        type_: variable_type_name,
                         ..
-                    }) => {
-                        tokens.next();
-
-                        let variable_type_name = if let Some(Token {
-                            type_: TokenType::Identifier(type_name),
-                            ..
-                        }) = tokens.peek()
-                        {
-                            tokens.next();
-                            type_name
-                        } else {
-                            return Err(create_parse_error!(
-                                token,
-                                format!("Expected type after colon.",)
-                            ));
-                        };
-
-                        let assignment_token = match tokens.next() {
-                            Some(token) => {
-                                if matches!(token.type_, TokenType::OperatorAssignment) {
-                                    token
-                                } else {
-                                    return Err(create_parse_error!(
-                                        token,
-                                        format!(
-                                            "Expected assignment operator after variable name."
-                                        )
-                                    ));
-                                }
-                            }
-                            _ => {
-                                return Err(create_parse_error!(
-                                    token,
-                                    format!("Expected a token after the variable type name.")
-                                ));
-                            }
-                        };
-
-                        let value = match parse_expression_until_token_type(
-                            tokens,
-                            &assignment_token,
-                            TokenType::OperatorStatementEnd,
-                        ) {
-                            Ok((value, new_tokens)) => {
-                                tokens = new_tokens;
-                                value
-                            }
-                            Err(parse_error) => {
-                                return Err(parse_error);
-                            }
-                        };
-
-                        ast_nodes.push(AstNode::VariableDefinition(
-                            AstNodeVariableIdentifier::WithType {
-                                attributes,
-                                identifier_name: name,
-                                type_name: variable_type_name,
-                            },
-                            Box::new(value),
-                        ));
-                    }
-                    Some(Token {
-                        type_: TokenType::OperatorAssignment,
-                        ..
-                    }) => {
-                        tokens.next();
-
-                        if let Some(Token {
-                            type_: TokenType::LiteralInteger(value),
-                            ..
-                        }) = tokens.peek()
-                        {
-                            tokens.next();
-
-                            if let Some(Token {
-                                type_: TokenType::OperatorStatementEnd,
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-                                ast_nodes.push(AstNode::VariableDefinition(
-                                    AstNodeVariableIdentifier::WithoutType {
-                                        attributes: vec![],
-                                        identifier_name: name,
-                                    },
-                                    Box::new(AstNode::LiteralInteger(*value)),
-                                ));
-                            } else {
-                                return Err(create_parse_error!(
-                                    token,
-                                    format!("Expected statement end after variable definition.",)
-                                ));
-                            }
-                        } else {
-                            return Err(create_parse_error!(
-                                token,
-                                format!("Expected integer literal after assignment operator.",)
-                            ));
-                        }
-                    }
+                    }) => variable_type_name,
                     _ => {
                         return Err(create_parse_error!(
                             token,
-                            format!(
-                                "Expected type or assignment operator after variable name. Instead, found: {:?}",
-                                tokens.peek()
-                            )
+                            String::from("Expected token after colon.")
                         ));
                     }
-                }
+                };
 
-                break;
+                let type_name = match variable_type {
+                    TokenType::Identifier(name) => name,
+                    _ => {
+                        return Err(create_parse_error!(
+                            token,
+                            String::from("Expected type name after colon.")
+                        ));
+                    }
+                };
+
+                variable_type_name = Some(type_name);
+            }
+            TokenType::Identifier(name) => {
+                variable_name = Some(name);
+            }
+            TokenType::OperatorAssignment => {
+                let Some(variable_name) = variable_name else {
+                    return Err(create_parse_error!(
+                        token,
+                        format!(
+                            "Expected variable name before colon. Instead, found: {:?}",
+                            token
+                        )
+                    ));
+                };
+
+                let value: AstNode<'_>;
+                (value, tokens) = parse_expression_until_inclusive(tokens, token, |token| {
+                    matches!(token.type_, TokenType::OperatorStatementEnd)
+                })?;
+
+                let variable = match variable_type_name {
+                    Some(type_name) => AstNodeVariableIdentifier::WithType {
+                        attributes,
+                        identifier_name: variable_name,
+                        type_name,
+                    },
+                    None => AstNodeVariableIdentifier::WithoutType {
+                        attributes,
+                        identifier_name: variable_name,
+                    },
+                };
+
+                return Ok((
+                    AstNode::VariableDefinition(variable, Box::new(value)),
+                    tokens,
+                ));
             }
             _ => {
-                return Err(create_parse_error!(
-                    token,
-                    format!(
-                        "Expected variable name after '{KEYWORD_LET}' keyword. Instead, no identifier for variable name found."
-                    )
-                ));
+                return Err(create_parse_error!(token, format!("Unexpecte token.")));
             }
         }
     }
 
-    Ok((ast_nodes, tokens))
+    Err(create_parse_error!(
+        token,
+        format!("Unexpected end of tokens.")
+    ))
 }
 
 /// Parses code in form of a string into a sequence of tokens.
@@ -877,6 +916,7 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                 if brace_level == 0 {
                     return Err("Unexpected closing brace. There are too many closing braces compared to opening braces.".into());
                 }
+
                 brace_level -= 1;
                 push_token_with_pos!(TokenType::DelimiterBraceClose { level: brace_level });
                 current_col += 1;
@@ -930,6 +970,14 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
             }
             '&' => {
                 push_token_with_pos!(TokenType::OperatorBinaryAnd);
+                current_col += 1;
+            }
+            '>' => {
+                push_token_with_pos!(TokenType::OperatorGreaterThan);
+                current_col += 1;
+            }
+            '<' => {
+                push_token_with_pos!(TokenType::OperatorLessThan);
                 current_col += 1;
             }
             ';' => {
@@ -1066,6 +1114,9 @@ pub fn tokenize<'a>(code: &str) -> Result<Vec<Token>, String> {
                     match &code[i..identifier_or_keyword_index_end] {
                         KEYWORD_FN => {
                             push_keyword_token_with_pos!(KEYWORD_FN, TokenType::KeywordFn)
+                        }
+                        KEYWORD_IF => {
+                            push_keyword_token_with_pos!(KEYWORD_IF, TokenType::KeywordIf)
                         }
                         KEYWORD_LET => {
                             push_keyword_token_with_pos!(KEYWORD_LET, TokenType::KeywordLet)
